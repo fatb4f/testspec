@@ -26,6 +26,7 @@ TIER0_PHASES=(
   bash_to_zsh
   zsh_to_bash
   path_resolution
+  loader_transition_contract
   precommit_lint
   audit_gate
   doctor_graph
@@ -330,6 +331,8 @@ tier0_prepare_home() {
   fi
 
   export TIER0_HOME="$home"
+  export TIER0_FIXTURE_HOME="$home"
+  export TIER0_FIXTURE_BIN_HOME="$home/.local/share/path"
   export TIER0_XDG_CONFIG_HOME="$home/.config"
   export TIER0_XDG_DATA_HOME="$home/.local/share"
   export TIER0_XDG_STATE_HOME="$home/.local/state"
@@ -350,6 +353,9 @@ tier0_clean_env() {
 
   env -i \
     HOME="$home" \
+    TIER0_HOME="$TIER0_HOME" \
+    TIER0_FIXTURE_HOME="$TIER0_FIXTURE_HOME" \
+    TIER0_FIXTURE_BIN_HOME="$TIER0_FIXTURE_BIN_HOME" \
     USER="${USER:-tier0}" \
     LOGNAME="${LOGNAME:-${USER:-tier0}}" \
     PATH="$TIER0_SYSTEM_PATH" \
@@ -360,12 +366,18 @@ tier0_clean_env() {
     XDG_DATA_HOME="$TIER0_XDG_DATA_HOME" \
     XDG_STATE_HOME="$TIER0_XDG_STATE_HOME" \
     XDG_CACHE_HOME="$TIER0_XDG_CACHE_HOME" \
+    XDG_BIN_HOME="$TIER0_FIXTURE_BIN_HOME" \
+    TOOL_PATH_HOME="$TIER0_FIXTURE_BIN_HOME" \
+    XDG_DATA_BIN="$TIER0_FIXTURE_BIN_HOME" \
     TERM="${TERM:-xterm-256color}"
 }
 
 tier0_in_home() {
   (
     export HOME="$TIER0_HOME"
+    export TIER0_HOME="$TIER0_HOME"
+    export TIER0_FIXTURE_HOME="$TIER0_FIXTURE_HOME"
+    export TIER0_FIXTURE_BIN_HOME="$TIER0_FIXTURE_BIN_HOME"
     export USER="${USER:-tier0}"
     export LOGNAME="${LOGNAME:-$USER}"
     export PATH="$TIER0_SYSTEM_PATH"
@@ -375,11 +387,38 @@ tier0_in_home() {
     export XDG_DATA_HOME="$TIER0_XDG_DATA_HOME"
     export XDG_STATE_HOME="$TIER0_XDG_STATE_HOME"
     export XDG_CACHE_HOME="$TIER0_XDG_CACHE_HOME"
+    export XDG_BIN_HOME="$TIER0_FIXTURE_BIN_HOME"
+    export TOOL_PATH_HOME="$TIER0_FIXTURE_BIN_HOME"
+    export XDG_DATA_BIN="$TIER0_FIXTURE_BIN_HOME"
     # shellcheck source=/dev/null
     . "$HOME/.config/shell/load-env.sh"
     cd "$HOME"
     "$@"
   )
+}
+
+tier0_snapshot_env_json() {
+  jq -n \
+    --arg home "$HOME" \
+    --arg path "${PATH:-}" \
+    --arg xdg_bin_home "${XDG_BIN_HOME:-}" \
+    --arg xdg_data_bin "${XDG_DATA_BIN:-}" \
+    --arg tool_path_home "${TOOL_PATH_HOME:-}" \
+    --arg tier0_system_path "${TIER0_SYSTEM_PATH:-}" \
+    --arg pwd "$PWD" \
+    --arg dotctl "$(command -v dotctl 2>/dev/null || true)" \
+    --arg yadm "$(command -v yadm 2>/dev/null || true)" \
+    --arg just "$(command -v just 2>/dev/null || true)" \
+    '{
+      home:$home,
+      path:($path | split(":")),
+      xdg_bin_home:$xdg_bin_home,
+      xdg_data_bin:$xdg_data_bin,
+      tool_path_home:$tool_path_home,
+      tier0_system_path:$tier0_system_path,
+      pwd:$pwd,
+      commands:{dotctl:$dotctl, yadm:$yadm, just:$just}
+    }'
 }
 
 tier0_phase_clean_bash_load() {
@@ -487,7 +526,13 @@ tier0_preflight_check_json() {
 }
 
 tier0_preflight_bundle() {
-  jq -s '{ok: all(.[]; .ok == true), checks:.}'
+  local env_json=${1:-}
+
+  if [[ -n "$env_json" ]]; then
+    jq -s --argjson env "$env_json" '{ok: all(.[]; .ok == true), checks:., env:$env}'
+  else
+    jq -s '{ok: all(.[]; .ok == true), checks:.}'
+  fi
 }
 
 tier0_preflight_precommit_lint() {
@@ -521,7 +566,7 @@ tier0_preflight_precommit_lint() {
   ok=false; reason="shellspec missing on PATH"; command -v shellspec >/dev/null 2>&1 && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json shellspec "$ok" "$reason")")
 
-  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
 tier0_preflight_audit_gate() {
@@ -543,7 +588,7 @@ tier0_preflight_audit_gate() {
   ok=false; reason="policy directory missing"; [[ -d "$TIER0_REPO_ROOT/tests/tier0/policy" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json policy_dir "$ok" "$reason")")
 
-  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
 tier0_preflight_doctor_graph() {
@@ -565,7 +610,7 @@ tier0_preflight_doctor_graph() {
   ok=false; reason="python3 missing on PATH"; command -v python3 >/dev/null 2>&1 && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json python3 "$ok" "$reason")")
 
-  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
 tier0_preflight_bootstrap_dry_run() {
@@ -581,7 +626,7 @@ tier0_preflight_bootstrap_dry_run() {
   ok=false; reason="bootstrap.d directory missing"; [[ -d "$TIER0_REPO_ROOT/.config/yadm/bootstrap.d" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json bootstrap_d_dir "$ok" "$reason")")
 
-  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
 tier0_preflight_git_refresh_status() {
@@ -603,7 +648,7 @@ tier0_preflight_git_refresh_status() {
   ok=false; reason="repo fixture unreadable"; [[ -r "$TIER0_REPO_ROOT/Justfile" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json repo_fixture "$ok" "$reason")")
 
-  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
 tier0_preflight_dotctl_check() {
@@ -622,7 +667,23 @@ tier0_preflight_dotctl_check() {
   ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
 
-  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
+}
+
+tier0_preflight_loader_transition_contract() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
+
+  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
+
+  ok=false; reason="load-env.sh missing"; [[ -r "$TIER0_REPO_ROOT/.config/shell/load-env.sh" ]] && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json load_env_sh "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
 tier0_run_phase_preflight() {
@@ -635,8 +696,70 @@ tier0_run_phase_preflight() {
     bootstrap_dry_run) tier0_preflight_bootstrap_dry_run ;;
     git_refresh_status) tier0_preflight_git_refresh_status ;;
     dotctl_check) tier0_preflight_dotctl_check ;;
+    loader_transition_contract) tier0_preflight_loader_transition_contract ;;
     *) jq -n '{ok:true, checks:[]}' ;;
   esac
+}
+
+tier0_phase_loader_transition_contract() {
+  local script
+  script=$(cat <<'EOF'
+set -euo pipefail
+
+snapshot() {
+  local label=$1
+  jq -n \
+    --arg label "$label" \
+    --arg home "$HOME" \
+    --arg path "${PATH:-}" \
+    --arg xdg_bin_home "${XDG_BIN_HOME:-}" \
+    --arg xdg_data_bin "${XDG_DATA_BIN:-}" \
+    --arg tool_path_home "${TOOL_PATH_HOME:-}" \
+    --arg tier0_system_path "${TIER0_SYSTEM_PATH:-}" \
+    --arg pwd "$PWD" \
+    --arg dotctl "$(command -v dotctl 2>/dev/null || true)" \
+    --arg yadm "$(command -v yadm 2>/dev/null || true)" \
+    --arg just "$(command -v just 2>/dev/null || true)" \
+    '{
+      label:$label,
+      home:$home,
+      path:($path | split(":")),
+      xdg_bin_home:$xdg_bin_home,
+      xdg_data_bin:$xdg_data_bin,
+      tool_path_home:$tool_path_home,
+      tier0_system_path:$tier0_system_path,
+      pwd:$pwd,
+      commands:{dotctl:$dotctl, yadm:$yadm, just:$just}
+    }'
+}
+
+transition_file="$TIER0_HOME/.local/state/tier0-loader-transition.json"
+before="$(snapshot before)"
+. "$HOME/.config/shell/load-env.sh"
+after="$(snapshot after)"
+
+jq -n \
+  --argjson before "$before" \
+  --argjson after "$after" \
+  '{
+    schema:"tier0.loader-transition.observed.v0",
+    before:$before,
+    after:$after,
+    invariants:{
+      tool_path_preserved:(($before.tool_path_home == "") or ($after.path | index($before.tool_path_home) != null)),
+      xdg_bin_preserved:(($before.xdg_bin_home == "") or ($after.path | index($before.xdg_bin_home) != null)),
+      fixture_tools_first:(($before.tool_path_home == "") or ($after.path[0] == $before.tool_path_home)),
+      dotctl_resolves:($after.commands.dotctl != ""),
+      yadm_resolves:($after.commands.yadm != ""),
+      just_resolves:($after.commands.just != "")
+    }
+  }' > "$transition_file"
+
+cat "$transition_file"
+cue vet "$TIER0_REPO_ROOT/tier-0/tests/tier0/policy/env.cue" "$transition_file" -d "#LoaderTransition" >/dev/null
+EOF
+)
+  tier0_clean_env /bin/bash bash --noprofile --norc -c "$script"
 }
 
 tier0_classify_phase_failure() {
@@ -771,7 +894,7 @@ tier0_run_all_phases() {
 
   for phase in "${TIER0_PHASES[@]}"; do
     preflight_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.preflight.XXXXXX")"
-    tier0_run_phase_preflight "$phase" >"$preflight_file"
+    tier0_in_home tier0_run_phase_preflight "$phase" >"$preflight_file"
     if tier0_run_phase "$phase"; then
       status=0
     else
@@ -784,7 +907,7 @@ tier0_run_all_phases() {
       cat "$output_file"
     fi
 
-    if [[ "$status" -eq 0 ]]; then
+  if [[ "$status" -eq 0 ]]; then
       printf '[ok] %s\n' "$phase"
     else
       printf '[fail] %s\n' "$phase" >&2

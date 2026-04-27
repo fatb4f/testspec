@@ -112,7 +112,8 @@ for item in "${containers[@]}"; do
           command: $phase.command,
           stderr_excerpt: ($phase.stderr_excerpt // ""),
           preflight_failed_check: ($phase.preflight_failed_check // ""),
-          preflight_failed_reason: ($phase.preflight_failed_reason // "")
+          preflight_failed_reason: ($phase.preflight_failed_reason // ""),
+          preflight: ($phase.preflight // {})
         }
       )
     ' "$json" 2>/dev/null || printf '{}')"

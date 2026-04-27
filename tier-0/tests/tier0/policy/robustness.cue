@@ -18,6 +18,20 @@ package tier0
   preflight_failed_reason: string
   preflight: {
     ok: bool
+    env?: {
+      home: string
+      path: [...string]
+      xdg_bin_home: string
+      xdg_data_bin: string
+      tool_path_home: string
+      tier0_system_path: string
+      pwd: string
+      commands: {
+        dotctl: string
+        yadm: string
+        just: string
+      }
+    }
     checks: [...{
       name: string
       ok: bool
