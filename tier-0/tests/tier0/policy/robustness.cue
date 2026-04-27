@@ -14,6 +14,16 @@ package tier0
   classification: string
   reason: string
   stderr_excerpt: string
+  preflight_failed_check: string
+  preflight_failed_reason: string
+  preflight: {
+    ok: bool
+    checks: [...{
+      name: string
+      ok: bool
+      reason: string
+    }]
+  }
 }
 
 #RobustnessReport: {

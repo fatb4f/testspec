@@ -110,7 +110,9 @@ for item in "${containers[@]}"; do
           reason: ($phase.reason // ""),
           exit: $phase.exit,
           command: $phase.command,
-          stderr_excerpt: ($phase.stderr_excerpt // "")
+          stderr_excerpt: ($phase.stderr_excerpt // ""),
+          preflight_failed_check: ($phase.preflight_failed_check // ""),
+          preflight_failed_reason: ($phase.preflight_failed_reason // "")
         }
       )
     ' "$json" 2>/dev/null || printf '{}')"
@@ -162,11 +164,25 @@ jq -n \
     printf '%s\n' "- schema_result: $(jq -r '.schema_result' "$distro_summary")"
     printf '%s\n' "- success_result: $(jq -r '.success_result' "$distro_summary")"
     printf '%s\n\n' "- failed_phases: $(jq -cr '.failed_phases' "$distro_summary")"
-    jq -r '
-      .failures
-      | to_entries[]
-      | "- \(.key): \(.value.classification) | \(.value.reason) | exit=\(.value.exit) | command=\(.value.command) | stderr=\(.value.stderr_excerpt)"
-    ' "$distro_summary" 2>/dev/null || true
+    while IFS=$'\t' read -r phase classification reason preflight_failed_check preflight_failed_reason exit_code command; do
+      [[ -n "$phase" ]] || continue
+      printf '%s\n' "- $phase: $classification | $reason | preflight=$preflight_failed_check | preflight_reason=$preflight_failed_reason | exit=$exit_code | command=$command"
+    done < <(
+      jq -r '
+        .failures
+        | to_entries[]
+        | [
+            .key,
+            .value.classification,
+            (.value.reason | gsub("\n"; " ")),
+            (.value.preflight_failed_check // ""),
+            (.value.preflight_failed_reason // ""),
+            (.value.exit | tostring),
+            .value.command
+          ]
+        | @tsv
+      ' "$distro_summary" 2>/dev/null || true
+    )
     printf '\n'
   done
 } >"$summary_md"

@@ -474,14 +474,208 @@ tier0_phase_dotctl_check() {
   tier0_in_home dotctl check >/dev/null
 }
 
+tier0_preflight_check_json() {
+  local name=${1:?name}
+  local ok=${2:?ok}
+  local reason=${3:-}
+
+  jq -n \
+    --arg name "$name" \
+    --arg reason "$reason" \
+    --argjson ok "$ok" \
+    '{name:$name, ok:$ok, reason:$reason}'
+}
+
+tier0_preflight_bundle() {
+  jq -s '{ok: all(.[]; .ok == true), checks:.}'
+}
+
+tier0_preflight_precommit_lint() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="just binary missing"; command -v just >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json just "$ok" "$reason")")
+
+  ok=false; reason="Justfile missing"; [[ -r "$TIER0_REPO_ROOT/Justfile" ]] && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json Justfile "$ok" "$reason")")
+
+  ok=false; reason="precommit-lint recipe missing"; if command -v just >/dev/null 2>&1; then just --list 2>/dev/null | grep -qx 'precommit-lint' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json precommit-lint_recipe "$ok" "$reason")")
+
+  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
+
+  ok=false; reason="shellcheck missing on PATH"; command -v shellcheck >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json shellcheck "$ok" "$reason")")
+
+  ok=false; reason="shfmt missing on PATH"; command -v shfmt >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json shfmt "$ok" "$reason")")
+
+  ok=false; reason="shellharden missing on PATH"; command -v shellharden >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json shellharden "$ok" "$reason")")
+
+  ok=false; reason="bats missing on PATH"; command -v bats >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json bats "$ok" "$reason")")
+
+  ok=false; reason="shellspec missing on PATH"; command -v shellspec >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json shellspec "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+}
+
+tier0_preflight_audit_gate() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
+
+  ok=false; reason="dotctl audit command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])audit([[:space:]]|$)' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json dotctl_audit_command "$ok" "$reason")")
+
+  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
+
+  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
+
+  ok=false; reason="policy directory missing"; [[ -d "$TIER0_REPO_ROOT/tests/tier0/policy" ]] && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json policy_dir "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+}
+
+tier0_preflight_doctor_graph() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
+
+  ok=false; reason="dotctl doctor command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])doctor([[:space:]]|$)' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json dotctl_doctor_command "$ok" "$reason")")
+
+  ok=false; reason="dotctl doctor check command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])doctor([[:space:]]|$)' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json dotctl_doctor_check_command "$ok" "$reason")")
+
+  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
+
+  ok=false; reason="python3 missing on PATH"; command -v python3 >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json python3 "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+}
+
+tier0_preflight_bootstrap_dry_run() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="yadm missing on PATH"; command -v yadm >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json yadm "$ok" "$reason")")
+
+  ok=false; reason="bootstrap entrypoint missing"; [[ -x "$TIER0_REPO_ROOT/.config/yadm/bootstrap" || -x "$TIER0_REPO_ROOT/tests/tier0/fixtures/.config/yadm/bootstrap" || -x "$TIER0_REPO_ROOT/tier-0/.config/yadm/bootstrap" || -x "$TIER0_REPO_ROOT/.config/yadm/bootstrap" ]] && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json bootstrap_entrypoint "$ok" "$reason")")
+
+  ok=false; reason="bootstrap.d directory missing"; [[ -d "$TIER0_REPO_ROOT/.config/yadm/bootstrap.d" ]] && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json bootstrap_d_dir "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+}
+
+tier0_preflight_git_refresh_status() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
+
+  ok=false; reason="dotctl git command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])git([[:space:]]|$)' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json dotctl_git_command "$ok" "$reason")")
+
+  ok=false; reason="dotctl git refresh command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])git([[:space:]]|$)' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json dotctl_git_refresh_command "$ok" "$reason")")
+
+  ok=false; reason="git missing on PATH"; command -v git >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json git "$ok" "$reason")")
+
+  ok=false; reason="repo fixture unreadable"; [[ -r "$TIER0_REPO_ROOT/Justfile" ]] && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json repo_fixture "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+}
+
+tier0_preflight_dotctl_check() {
+  local checks=()
+  local ok reason
+
+  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
+
+  ok=false; reason="dotctl check command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])check([[:space:]]|$)' && ok=true && reason=""; fi
+  checks+=("$(tier0_preflight_check_json dotctl_check_command "$ok" "$reason")")
+
+  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
+
+  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
+  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
+
+  printf '%s\n' "${checks[@]}" | tier0_preflight_bundle
+}
+
+tier0_run_phase_preflight() {
+  local phase=${1:?phase}
+
+  case "$phase" in
+    precommit_lint) tier0_preflight_precommit_lint ;;
+    audit_gate) tier0_preflight_audit_gate ;;
+    doctor_graph) tier0_preflight_doctor_graph ;;
+    bootstrap_dry_run) tier0_preflight_bootstrap_dry_run ;;
+    git_refresh_status) tier0_preflight_git_refresh_status ;;
+    dotctl_check) tier0_preflight_dotctl_check ;;
+    *) jq -n '{ok:true, checks:[]}' ;;
+  esac
+}
+
 tier0_classify_phase_failure() {
   local phase=${1:?phase}
   local status=${2:?status}
   local output_file=${3:?output_file}
+  local preflight_file=${4:-}
   local output=""
+  local preflight_failed_name=""
+  local preflight_failed_reason=""
 
   if [[ -r "$output_file" ]]; then
     output="$(cat "$output_file")"
+  fi
+
+  if [[ -n "$preflight_file" && -r "$preflight_file" ]]; then
+    preflight_failed_name="$(jq -r '.checks[] | select(.ok == false) | .name' "$preflight_file" 2>/dev/null | head -n1 || true)"
+    preflight_failed_reason="$(jq -r '.checks[] | select(.ok == false) | .reason' "$preflight_file" 2>/dev/null | head -n1 || true)"
+  fi
+
+  if [[ -n "$preflight_failed_name" ]]; then
+    case "$preflight_failed_name" in
+      just|dotctl|yadm|git)
+        printf '%s\n%s\n' 'missing_tool' "${preflight_failed_reason:-command unavailable for phase: $phase}"
+        return 0
+        ;;
+      cue|jq|python3|shellcheck|shfmt|shellharden|bats|shellspec)
+        printf '%s\n%s\n' 'missing_dependency' "${preflight_failed_reason:-dependency unavailable for phase: $phase}"
+        return 0
+        ;;
+      Justfile|precommit-lint_recipe|policy_dir|bootstrap_entrypoint|bootstrap_d_dir|repo_fixture)
+        printf '%s\n%s\n' 'fixture_gap' "${preflight_failed_reason:-fixture gap for phase: $phase}"
+        return 0
+        ;;
+      dotctl_audit_command|dotctl_doctor_command|dotctl_doctor_check_command|dotctl_git_command|dotctl_git_refresh_command|dotctl_check_command)
+        printf '%s\n%s\n' 'missing_tool' "${preflight_failed_reason:-missing command contract for phase: $phase}"
+        return 0
+        ;;
+    esac
   fi
 
   if [[ "$status" -eq 127 ]] || grep -qiE 'missing required Tier-0 test tools|command not found|not found' <<<"$output"; then
@@ -526,18 +720,28 @@ tier0_record_phase() {
   local phase=${1:?phase}
   local status=${2:?status}
   local output_file=${3:?output_file}
+  local preflight_file=${4:-}
   local ok=false
   local classification reason stderr_excerpt
+  local preflight_json='{"ok":true,"checks":[]}'
+  local preflight_failed_check=""
+  local preflight_failed_reason=""
 
   stderr_excerpt=""
+
+  if [[ -n "$preflight_file" && -r "$preflight_file" ]]; then
+    preflight_json="$(cat "$preflight_file")"
+    preflight_failed_check="$(jq -r '.checks[] | select(.ok == false) | .name' "$preflight_file" 2>/dev/null | head -n1 || true)"
+    preflight_failed_reason="$(jq -r '.checks[] | select(.ok == false) | .reason' "$preflight_file" 2>/dev/null | head -n1 || true)"
+  fi
 
   if [[ "$status" -eq 0 ]]; then
     ok=true
     classification="passed"
     reason="phase completed successfully"
   else
-    classification="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" | sed -n '1p')"
-    reason="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" | sed -n '2p')"
+    classification="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" "$preflight_file" | sed -n '1p')"
+    reason="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" "$preflight_file" | sed -n '2p')"
     stderr_excerpt="$(tail -n 12 "$output_file" 2>/dev/null || true)"
   fi
 
@@ -549,19 +753,25 @@ tier0_record_phase() {
     --arg classification "$classification" \
     --arg reason "$reason" \
     --arg stderr_excerpt "$stderr_excerpt" \
+    --arg preflight_failed_check "$preflight_failed_check" \
+    --arg preflight_failed_reason "$preflight_failed_reason" \
+    --argjson preflight "$preflight_json" \
     --argjson ok "$ok" \
     --argjson exit "$status" \
-    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command, classification:$classification, reason:$reason, stderr_excerpt:$stderr_excerpt}'
+    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command, classification:$classification, reason:$reason, stderr_excerpt:$stderr_excerpt, preflight_failed_check:$preflight_failed_check, preflight_failed_reason:$preflight_failed_reason, preflight:$preflight}'
 }
 
 tier0_run_all_phases() {
   local phase status=0
   local ok=true
   local output_file
+  local preflight_file
   local report="$TIER0_HOME/.local/state/tier0-robustness-report.ndjson"
   : > "$report"
 
   for phase in "${TIER0_PHASES[@]}"; do
+    preflight_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.preflight.XXXXXX")"
+    tier0_run_phase_preflight "$phase" >"$preflight_file"
     if tier0_run_phase "$phase"; then
       status=0
     else
@@ -580,8 +790,9 @@ tier0_run_all_phases() {
       printf '[fail] %s\n' "$phase" >&2
     fi
 
-    tier0_record_phase "$phase" "$status" "$output_file" >> "$report"
+    tier0_record_phase "$phase" "$status" "$output_file" "$preflight_file" >> "$report"
     rm -f -- "$output_file"
+    rm -f -- "$preflight_file"
   done
 
   jq -s --arg distro "$TIER0_HOST_CLASS" --arg mode "${TIER0_MODE:-unit}" \
