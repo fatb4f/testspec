@@ -92,6 +92,7 @@ Run:
 
 ```sh
 ./tests/tier0/scripts/distrobox-matrix.sh
+just test-tier0-matrix
 ```
 
 Override names:

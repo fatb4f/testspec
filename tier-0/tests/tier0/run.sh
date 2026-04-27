@@ -65,7 +65,9 @@ done
 
 export TIER0_REPO_ROOT="$repo_root"
 
-tier0_require_tools
+if ! tier0_require_tools; then
+  printf 'warn: continuing Tier-0 report generation despite missing tools\n' >&2
+fi
 overall_status=0
 
 if [[ -z "${TIER0_HOST_CLASS:-}" ]]; then
@@ -73,7 +75,8 @@ if [[ -z "${TIER0_HOST_CLASS:-}" ]]; then
 fi
 
 report_dir="${TIER0_REPORT_DIR:-$repo_root/.tier0-results}"
-report_base="tier0-robustness-${TIER0_HOST_CLASS}"
+report_distro="${TIER0_DISTRO:-$TIER0_HOST_CLASS}"
+report_base="tier0-robustness-${report_distro}"
 report_json="$report_dir/$report_base.json"
 report_log="$report_dir/$report_base.log"
 
