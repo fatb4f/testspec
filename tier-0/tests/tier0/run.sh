@@ -66,23 +66,41 @@ done
 export TIER0_REPO_ROOT="$repo_root"
 
 tier0_require_tools
+overall_status=0
 
 if [[ "$run_phases" == true ]]; then
   tier0_prepare_home "$repo_root" "${TMPDIR:-/tmp}"
   trap tier0_cleanup_home EXIT
-  tier0_run_all_phases
+  if tier0_run_all_phases; then
+    run_phases_status=0
+  else
+    run_phases_status=$?
+  fi
   printf 'report: %s\n' "$TIER0_HOME/.local/state/tier0-robustness-report.json"
   tier0_cleanup_home
   trap - EXIT
+  if [[ "$run_phases_status" -ne 0 ]]; then
+    overall_status="$run_phases_status"
+  fi
 fi
 
 if [[ "$run_bats" == true ]]; then
-  TIER0_REPO_ROOT="$repo_root" bats "$script_dir/bats"
+  if TIER0_REPO_ROOT="$repo_root" bats "$script_dir/bats"; then
+    :
+  else
+    overall_status=$?
+  fi
 fi
 
 if [[ "$run_shellspec" == true ]]; then
   (
     cd "$repo_root"
-    TIER0_REPO_ROOT="$repo_root" shellspec -s bash "$script_dir/shellspec"
-  )
+    if TIER0_REPO_ROOT="$repo_root" shellspec -s bash "$script_dir/shellspec"; then
+      :
+    else
+      exit 1
+    fi
+  ) || overall_status=$?
 fi
+
+exit "$overall_status"

@@ -5,10 +5,12 @@ package tier0
 
 #PhaseResult: {
   name: string
-  ok: true
+  ok: bool
+  exit: int & >=0
   mode: #Mode
   distro: #Distro
   readonly: true
+  command: string
 }
 
 #RobustnessReport: {
@@ -16,8 +18,10 @@ package tier0
   distro: #Distro
   mode: #Mode
   summary: {
-    ok: true
-    count: int & >=12
+    ok: bool
+    count: int & >=0
+    expected_count: int & >=0
+    failed: [...string]
   }
   phases: [...#PhaseResult]
 }

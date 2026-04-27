@@ -10,6 +10,7 @@ TIER0_REQUIRED_TOOLS=(
   jq
   cue
   just
+  python3
   shellcheck
   shfmt
   shellharden
@@ -390,6 +391,7 @@ tier0_phase_path_resolution() {
   tier0_clean_env /bin/bash bash --noprofile --norc -c '
     set -euo pipefail
     . "$HOME/.config/shell/load-env.sh"
+    command -v python3 >/dev/null
     command -v dotctl >/dev/null
     command -v cue >/dev/null
     command -v just >/dev/null
@@ -435,33 +437,67 @@ tier0_phase_dotctl_check() {
 
 tier0_run_phase() {
   local phase=${1:?phase}
-  "tier0_phase_${phase}"
+  local status=0
+
+  set +e
+  ("tier0_phase_${phase}")
+  status=$?
+  set -e
+
+  return "$status"
+}
+
+tier0_record_phase() {
+  local phase=${1:?phase}
+  local status=${2:?status}
+  local ok=false
+
+  if [[ "$status" -eq 0 ]]; then
+    ok=true
+  fi
+
+  jq -n \
+    --arg name "$phase" \
+    --arg mode "${TIER0_MODE:-unit}" \
+    --arg distro "$TIER0_HOST_CLASS" \
+    --arg command "tier0_phase_${phase}" \
+    --argjson ok "$ok" \
+    --argjson exit "$status" \
+    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command}'
 }
 
 tier0_run_all_phases() {
-  local phase ok=true
+  local phase status=0
+  local ok=true
   local report="$TIER0_HOME/.local/state/tier0-robustness-report.ndjson"
   : > "$report"
 
   for phase in "${TIER0_PHASES[@]}"; do
     if tier0_run_phase "$phase"; then
+      status=0
       printf '[ok] %s\n' "$phase"
-      jq -n --arg name "$phase" --arg mode "${TIER0_MODE:-unit}" --arg distro "$TIER0_HOST_CLASS" \
-        '{name:$name, ok:true, mode:$mode, distro:$distro, readonly:true}' >> "$report"
     else
+      status=$?
       printf '[fail] %s\n' "$phase" >&2
-      jq -n --arg name "$phase" --arg mode "${TIER0_MODE:-unit}" --arg distro "$TIER0_HOST_CLASS" \
-        '{name:$name, ok:false, mode:$mode, distro:$distro, readonly:true}' >> "$report"
       ok=false
-      break
     fi
+
+    tier0_record_phase "$phase" "$status" >> "$report"
   done
 
   jq -s --arg distro "$TIER0_HOST_CLASS" --arg mode "${TIER0_MODE:-unit}" \
-    '{schema:"tier0.robustness.report.v0", distro:$distro, mode:$mode, summary:{ok: all(.[]; .ok == true), count:length}, phases:.}' \
+    '{schema:"tier0.robustness.report.v0", distro:$distro, mode:$mode, summary:{ok:(all(.[]; .ok == true)), count:length, expected_count:length, failed:[.[] | select(.ok == false) | .name]}, phases:.}' \
     "$report" > "$TIER0_HOME/.local/state/tier0-robustness-report.json"
 
   tier0_in_home cue vet "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" "$TIER0_HOME/.local/state/tier0-robustness-report.json" -d '#RobustnessReport' >/dev/null
+
+  if [[ "$ok" == true ]]; then
+    tier0_in_home cue vet \
+      "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" \
+      "$TIER0_REPO_ROOT/tests/tier0/policy/success.cue" \
+      "$TIER0_HOME/.local/state/tier0-robustness-report.json" \
+      -d '#SuccessfulRobustnessReport' >/dev/null
+  fi
 
   [[ "$ok" == true ]]
 }
