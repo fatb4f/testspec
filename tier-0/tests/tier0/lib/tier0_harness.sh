@@ -435,25 +435,71 @@ tier0_phase_dotctl_check() {
   tier0_in_home dotctl check >/dev/null
 }
 
+tier0_classify_phase_failure() {
+  local phase=${1:?phase}
+  local status=${2:?status}
+  local output_file=${3:?output_file}
+  local output=""
+
+  if [[ -r "$output_file" ]]; then
+    output="$(cat "$output_file")"
+  fi
+
+  if [[ "$status" -eq 127 ]] || grep -qiE 'missing required Tier-0 test tools|command not found|not found' <<<"$output"; then
+    printf '%s\n%s\n' 'missing_tool' "command or required tool unavailable for phase: $phase"
+    return 0
+  fi
+
+  if grep -qiE 'Justfile does not contain recipe|missing fixture|cannot stat|No such file or directory|No such file' <<<"$output"; then
+    printf '%s\n%s\n' 'fixture_gap' "fixture or projected file missing for phase: $phase"
+    return 0
+  fi
+
+  if grep -qiE 'conflicting values|incomplete value|field not allowed|policy|vet failed' <<<"$output"; then
+    printf '%s\n%s\n' 'policy_reject' "policy rejected observed state for phase: $phase"
+    return 0
+  fi
+
+  if grep -qiE 'Permission denied' <<<"$output"; then
+    printf '%s\n%s\n' 'missing_dependency' "permission denied while executing phase: $phase"
+    return 0
+  fi
+
+  printf '%s\n%s\n' 'command_failed' "command returned non-zero for phase: $phase"
+}
+
 tier0_run_phase() {
   local phase=${1:?phase}
   local status=0
+  local output_file
 
+  output_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.XXXXXX")"
   set +e
-  ("tier0_phase_${phase}")
+  ("tier0_phase_${phase}") >"$output_file" 2>&1
   status=$?
   set -e
 
+  TIER0_PHASE_OUTPUT_FILE="$output_file"
   return "$status"
 }
 
 tier0_record_phase() {
   local phase=${1:?phase}
   local status=${2:?status}
+  local output_file=${3:?output_file}
   local ok=false
+  local classification reason stderr_excerpt
+
+  stderr_excerpt=""
 
   if [[ "$status" -eq 0 ]]; then
     ok=true
+    classification="passed"
+    reason="phase completed successfully"
+  else
+    classification="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" | sed -n '1p')"
+    reason="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" | sed -n '2p')"
+    stderr_excerpt="$(tail -n 12 "$output_file" 2>/dev/null || true)"
   fi
 
   jq -n \
@@ -461,28 +507,42 @@ tier0_record_phase() {
     --arg mode "${TIER0_MODE:-unit}" \
     --arg distro "$TIER0_HOST_CLASS" \
     --arg command "tier0_phase_${phase}" \
+    --arg classification "$classification" \
+    --arg reason "$reason" \
+    --arg stderr_excerpt "$stderr_excerpt" \
     --argjson ok "$ok" \
     --argjson exit "$status" \
-    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command}'
+    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command, classification:$classification, reason:$reason, stderr_excerpt:$stderr_excerpt}'
 }
 
 tier0_run_all_phases() {
   local phase status=0
   local ok=true
+  local output_file
   local report="$TIER0_HOME/.local/state/tier0-robustness-report.ndjson"
   : > "$report"
 
   for phase in "${TIER0_PHASES[@]}"; do
     if tier0_run_phase "$phase"; then
       status=0
-      printf '[ok] %s\n' "$phase"
     else
       status=$?
-      printf '[fail] %s\n' "$phase" >&2
       ok=false
     fi
 
-    tier0_record_phase "$phase" "$status" >> "$report"
+    output_file="${TIER0_PHASE_OUTPUT_FILE:-}"
+    if [[ -n "$output_file" && -r "$output_file" ]]; then
+      cat "$output_file"
+    fi
+
+    if [[ "$status" -eq 0 ]]; then
+      printf '[ok] %s\n' "$phase"
+    else
+      printf '[fail] %s\n' "$phase" >&2
+    fi
+
+    tier0_record_phase "$phase" "$status" "$output_file" >> "$report"
+    rm -f -- "$output_file"
   done
 
   jq -s --arg distro "$TIER0_HOST_CLASS" --arg mode "${TIER0_MODE:-unit}" \

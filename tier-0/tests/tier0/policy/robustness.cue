@@ -11,6 +11,9 @@ package tier0
   distro: #Distro
   readonly: true
   command: string
+  classification: string
+  reason: string
+  stderr_excerpt: string
 }
 
 #RobustnessReport: {
