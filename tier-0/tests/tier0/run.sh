@@ -68,6 +68,18 @@ export TIER0_REPO_ROOT="$repo_root"
 tier0_require_tools
 overall_status=0
 
+if [[ -z "${TIER0_HOST_CLASS:-}" ]]; then
+  TIER0_HOST_CLASS="$(tier0_detect_host_class)"
+fi
+
+report_dir="${TIER0_REPORT_DIR:-$repo_root/.tier0-results}"
+report_base="tier0-robustness-${TIER0_HOST_CLASS}"
+report_json="$report_dir/$report_base.json"
+report_log="$report_dir/$report_base.log"
+
+mkdir -p "$report_dir"
+exec > >(tee "$report_log") 2>&1
+
 if [[ "$run_phases" == true ]]; then
   tier0_prepare_home "$repo_root" "${TMPDIR:-/tmp}"
   trap tier0_cleanup_home EXIT
@@ -76,7 +88,8 @@ if [[ "$run_phases" == true ]]; then
   else
     run_phases_status=$?
   fi
-  printf 'report: %s\n' "$TIER0_HOME/.local/state/tier0-robustness-report.json"
+  cp -a -- "$TIER0_HOME/.local/state/tier0-robustness-report.json" "$report_json"
+  printf 'report: %s\n' "$report_json"
   tier0_cleanup_home
   trap - EXIT
   if [[ "$run_phases_status" -ne 0 ]]; then

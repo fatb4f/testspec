@@ -79,6 +79,8 @@ Run only one backend:
 
 The runner creates an isolated temporary `$HOME`, copies only the Tier-0/control-plane subset, initializes a local Git fixture, and installs a test-local `dotctl`/`yadm` adapter in `$TOOL_PATH_HOME`. The adapters are unit-test shims for the control-plane libraries, not production replacements.
 
+When phases run, the harness also writes matrix artifacts to a predictable report directory. By default that is `./.tier0-results/` from the repo root, with files named like `tier0-robustness-debian-base.json` and `tier0-robustness-debian-base.log`. Override with `TIER0_REPORT_DIR` if needed.
+
 ## Distrobox matrix
 
 Expected existing containers:
@@ -110,6 +112,7 @@ Hard requirements:
 - `jq`
 - `cue`
 - `just`
+- `python3`
 - `shellcheck`
 - `shfmt`
 - `shellharden`

@@ -77,6 +77,7 @@ The archive tests the control-plane libraries through a temporary `$HOME` fixtur
 - audit allowlist drift
 - doctor graph schema drift
 - bootstrap dry-run regressions
+- pkg-dep class failures surfaced during bootstrap dry-run
 - git substrate projection regressions
 - aggregate `dotctl check` regressions
 

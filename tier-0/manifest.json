@@ -11,6 +11,7 @@
     "jq",
     "cue",
     "just",
+    "python3",
     "shellcheck",
     "shfmt",
     "shellharden",
