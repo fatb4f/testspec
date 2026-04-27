@@ -3,6 +3,12 @@
 
 set -euo pipefail
 
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=tier0_backend.sh
+source "$script_dir/tier0_backend.sh"
+# shellcheck source=tier0_kitty.sh
+source "$script_dir/tier0_kitty.sh"
+
 TIER0_REQUIRED_TOOLS=(
   bash
   zsh
@@ -405,6 +411,7 @@ tier0_snapshot_env_json() {
     --arg xdg_data_bin "${XDG_DATA_BIN:-}" \
     --arg tool_path_home "${TOOL_PATH_HOME:-}" \
     --arg tier0_system_path "${TIER0_SYSTEM_PATH:-}" \
+    --arg backend "${TIER0_SHELL_BACKEND:-headless}" \
     --arg pwd "$PWD" \
     --arg dotctl "$(command -v dotctl 2>/dev/null || true)" \
     --arg yadm "$(command -v yadm 2>/dev/null || true)" \
@@ -416,6 +423,7 @@ tier0_snapshot_env_json() {
       xdg_data_bin:$xdg_data_bin,
       tool_path_home:$tool_path_home,
       tier0_system_path:$tier0_system_path,
+      backend:$backend,
       pwd:$pwd,
       commands:{dotctl:$dotctl, yadm:$yadm, just:$just}
     }'
@@ -683,6 +691,11 @@ tier0_preflight_loader_transition_contract() {
   ok=false; reason="load-env.sh missing"; [[ -r "$TIER0_REPO_ROOT/.config/shell/load-env.sh" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json load_env_sh "$ok" "$reason")")
 
+  if [[ "${TIER0_SHELL_BACKEND:-headless}" == "kitty-run-shell" ]]; then
+    ok=false; reason="kitty run-shell backend unavailable"; (command -v kitten >/dev/null 2>&1 || command -v kitty >/dev/null 2>&1) && ok=true && reason=""
+    checks+=("$(tier0_preflight_check_json kitty_run_shell "$ok" "$reason")")
+  fi
+
   printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
 
@@ -702,32 +715,42 @@ tier0_run_phase_preflight() {
 }
 
 tier0_phase_loader_transition_contract() {
-  local script
-  script=$(cat <<'EOF'
+  local backend="${TIER0_SHELL_BACKEND:-headless}"
+  case "$backend" in
+    kitty-run-shell) tier0_phase_loader_transition_contract_kitty ;;
+    headless|'') tier0_phase_loader_transition_contract_headless ;;
+    *)
+      printf 'unsupported shell backend: %s\n' "$backend" >&2
+      return 2
+      ;;
+  esac
+}
+
+tier0_loader_transition_script_body() {
+  cat <<'EOF'
 set -euo pipefail
 
 snapshot() {
-  local label=$1
   jq -n \
-    --arg label "$label" \
     --arg home "$HOME" \
     --arg path "${PATH:-}" \
     --arg xdg_bin_home "${XDG_BIN_HOME:-}" \
     --arg xdg_data_bin "${XDG_DATA_BIN:-}" \
     --arg tool_path_home "${TOOL_PATH_HOME:-}" \
     --arg tier0_system_path "${TIER0_SYSTEM_PATH:-}" \
+    --arg backend "${TIER0_SHELL_BACKEND:-headless}" \
     --arg pwd "$PWD" \
     --arg dotctl "$(command -v dotctl 2>/dev/null || true)" \
     --arg yadm "$(command -v yadm 2>/dev/null || true)" \
     --arg just "$(command -v just 2>/dev/null || true)" \
     '{
-      label:$label,
       home:$home,
       path:($path | split(":")),
       xdg_bin_home:$xdg_bin_home,
       xdg_data_bin:$xdg_data_bin,
       tool_path_home:$tool_path_home,
       tier0_system_path:$tier0_system_path,
+      backend:$backend,
       pwd:$pwd,
       commands:{dotctl:$dotctl, yadm:$yadm, just:$just}
     }'
@@ -737,12 +760,17 @@ transition_file="$TIER0_HOME/.local/state/tier0-loader-transition.json"
 before="$(snapshot before)"
 . "$HOME/.config/shell/load-env.sh"
 after="$(snapshot after)"
+# shellcheck source=/dev/null
+source "$TIER0_REPO_ROOT/tier-0/tests/tier0/lib/tier0_backend.sh"
+backend="$(tier0_backend_report_json)"
 
 jq -n \
   --argjson before "$before" \
   --argjson after "$after" \
+  --argjson backend "$backend" \
   '{
     schema:"tier0.loader-transition.observed.v0",
+    backend:$backend,
     before:$before,
     after:$after,
     invariants:{
@@ -756,10 +784,29 @@ jq -n \
   }' > "$transition_file"
 
 cat "$transition_file"
-cue vet "$TIER0_REPO_ROOT/tier-0/tests/tier0/policy/env.cue" "$transition_file" -d "#LoaderTransition" >/dev/null
+cue vet \
+  "$TIER0_REPO_ROOT/tier-0/tests/tier0/policy/backend.cue" \
+  "$TIER0_REPO_ROOT/tier-0/tests/tier0/policy/env.cue" \
+  "$transition_file" \
+  -d "#LoaderTransition" >/dev/null
 EOF
-)
-  tier0_clean_env /bin/bash bash --noprofile --norc -c "$script"
+}
+
+tier0_phase_loader_transition_contract_headless() {
+  local script_file
+  script_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-loader-transition.XXXXXX.sh")"
+  tier0_loader_transition_script_body >"$script_file"
+  chmod 0755 "$script_file"
+  tier0_clean_env /bin/bash bash --noprofile --norc "$script_file"
+}
+
+tier0_phase_loader_transition_contract_kitty() {
+  local script_file
+
+  script_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-loader-transition-kitty.XXXXXX.sh")"
+  tier0_loader_transition_script_body >"$script_file"
+  chmod 0755 "$script_file"
+  tier0_kitty_run_shell "$script_file"
 }
 
 tier0_classify_phase_failure() {
@@ -919,13 +966,19 @@ tier0_run_all_phases() {
   done
 
   jq -s --arg distro "$TIER0_HOST_CLASS" --arg mode "${TIER0_MODE:-unit}" \
-    '{schema:"tier0.robustness.report.v0", distro:$distro, mode:$mode, summary:{ok:(all(.[]; .ok == true)), count:length, expected_count:length, failed:[.[] | select(.ok == false) | .name]}, phases:.}' \
+    --argjson backend "$(tier0_backend_report_json)" \
+    '{schema:"tier0.robustness.report.v0", backend:$backend, distro:$distro, mode:$mode, summary:{ok:(all(.[]; .ok == true)), count:length, expected_count:length, failed:[.[] | select(.ok == false) | .name]}, phases:.}' \
     "$report" > "$TIER0_HOME/.local/state/tier0-robustness-report.json"
 
-  tier0_in_home cue vet "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" "$TIER0_HOME/.local/state/tier0-robustness-report.json" -d '#RobustnessReport' >/dev/null
+  tier0_in_home cue vet \
+    "$TIER0_REPO_ROOT/tests/tier0/policy/backend.cue" \
+    "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" \
+    "$TIER0_HOME/.local/state/tier0-robustness-report.json" \
+    -d '#RobustnessReport' >/dev/null
 
   if [[ "$ok" == true ]]; then
     tier0_in_home cue vet \
+      "$TIER0_REPO_ROOT/tests/tier0/policy/backend.cue" \
       "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" \
       "$TIER0_REPO_ROOT/tests/tier0/policy/success.cue" \
       "$TIER0_HOME/.local/state/tier0-robustness-report.json" \

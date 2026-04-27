@@ -96,10 +96,10 @@ for item in "${containers[@]}"; do
   failed_phases="[]"
 
   if [[ -r "$json" ]]; then
-    if cue vet "$repo_root/tier-0/tests/tier0/policy/robustness.cue" "$json" -d '#RobustnessReport' >/dev/null 2>&1; then
+    if cue vet "$repo_root/tier-0/tests/tier0/policy/backend.cue" "$repo_root/tier-0/tests/tier0/policy/robustness.cue" "$json" -d '#RobustnessReport' >/dev/null 2>&1; then
       schema_status="pass"
     fi
-    if cue vet "$repo_root/tier-0/tests/tier0/policy/robustness.cue" "$repo_root/tier-0/tests/tier0/policy/success.cue" "$json" -d '#SuccessfulRobustnessReport' >/dev/null 2>&1; then
+    if cue vet "$repo_root/tier-0/tests/tier0/policy/backend.cue" "$repo_root/tier-0/tests/tier0/policy/robustness.cue" "$repo_root/tier-0/tests/tier0/policy/success.cue" "$json" -d '#SuccessfulRobustnessReport' >/dev/null 2>&1; then
       success_status="pass"
     fi
     failed_phases="$(jq -rc '.summary.failed // []' "$json" 2>/dev/null || printf '[]')"

@@ -42,6 +42,7 @@ package tier0
 
 #RobustnessReport: {
   schema: "tier0.robustness.report.v0"
+  backend?: #BackendReport
   distro: #Distro
   mode: #Mode
   summary: {

@@ -7,6 +7,7 @@ package tier0
   xdg_data_bin: string
   tool_path_home: string
   tier0_system_path: string
+  backend: string
   pwd: string
   commands: {
     dotctl: string
@@ -17,6 +18,7 @@ package tier0
 
 #LoaderTransition: {
   schema: "tier0.loader-transition.observed.v0"
+  backend?: #BackendReport
   before: #EnvSnapshot
   after: #EnvSnapshot
 
