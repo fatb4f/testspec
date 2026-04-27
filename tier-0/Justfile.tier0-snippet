@@ -1,0 +1,16 @@
+# Tier-0 robustness workflow
+
+test-tier0:
+    ./tests/tier0/run.sh --all
+
+test-tier0-phases:
+    ./tests/tier0/run.sh --phases
+
+test-tier0-bats:
+    ./tests/tier0/run.sh --bats
+
+test-tier0-shellspec:
+    ./tests/tier0/run.sh --shellspec
+
+test-tier0-distrobox:
+    ./tests/tier0/scripts/distrobox-matrix.sh

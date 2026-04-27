@@ -1,0 +1,42 @@
+{
+  "schema": "tier0.robustness.archive.v0",
+  "boundary": "Add Tier-0 robustness test workflow",
+  "scope": "control-plane",
+  "distro_targets": ["debian-base", "arch-base"],
+  "test_backends": ["phases", "bats", "shellspec"],
+  "required_tools": [
+    "bash",
+    "zsh",
+    "git",
+    "jq",
+    "cue",
+    "just",
+    "shellcheck",
+    "shfmt",
+    "shellharden",
+    "bats",
+    "shellspec",
+    "timeout"
+  ],
+  "phases": [
+    "clean_bash_load",
+    "clean_zsh_load",
+    "login_zsh_no_hang",
+    "bash_to_zsh",
+    "zsh_to_bash",
+    "path_resolution",
+    "precommit_lint",
+    "audit_gate",
+    "doctor_graph",
+    "bootstrap_dry_run",
+    "git_refresh_status",
+    "dotctl_check"
+  ],
+  "mutability": {
+    "live_repo": "read-only",
+    "fixture_home": "temporary-writable",
+    "package_installation": false,
+    "service_mutation": false,
+    "git_push_pull_commit": false
+  }
+}

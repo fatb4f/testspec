@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(CDPATH= cd -- "$script_dir/../.." && pwd -P)"
+# shellcheck source=tests/tier0/lib/tier0_harness.sh
+source "$script_dir/lib/tier0_harness.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: tests/tier0/run.sh [--all|--phases|--bats|--shellspec] [--repo PATH]
+
+Modes:
+  --all        run phase harness, Bats, and ShellSpec
+  --phases    run the direct phase harness
+  --bats      run Bats tests only
+  --shellspec run ShellSpec tests only
+
+Environment:
+  TIER0_MODE=unit|integration      default: unit
+  TIER0_HOST_CLASS=debian-base|arch-base
+USAGE
+}
+
+run_phases=false
+run_bats=false
+run_shellspec=false
+
+if (($# == 0)); then
+  run_phases=true
+fi
+
+while (($# > 0)); do
+  case "$1" in
+    --all)
+      run_phases=true
+      run_bats=true
+      run_shellspec=true
+      ;;
+    --phases)
+      run_phases=true
+      ;;
+    --bats)
+      run_bats=true
+      ;;
+    --shellspec)
+      run_shellspec=true
+      ;;
+    --repo)
+      shift
+      repo_root="${1:?missing --repo value}"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+export TIER0_REPO_ROOT="$repo_root"
+
+tier0_require_tools
+
+if [[ "$run_phases" == true ]]; then
+  tier0_prepare_home "$repo_root" "${TMPDIR:-/tmp}"
+  trap tier0_cleanup_home EXIT
+  tier0_run_all_phases
+  printf 'report: %s\n' "$TIER0_HOME/.local/state/tier0-robustness-report.json"
+  tier0_cleanup_home
+  trap - EXIT
+fi
+
+if [[ "$run_bats" == true ]]; then
+  TIER0_REPO_ROOT="$repo_root" bats "$script_dir/bats"
+fi
+
+if [[ "$run_shellspec" == true ]]; then
+  (
+    cd "$repo_root"
+    TIER0_REPO_ROOT="$repo_root" shellspec -s bash "$script_dir/shellspec"
+  )
+fi
