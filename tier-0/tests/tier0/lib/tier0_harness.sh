@@ -276,6 +276,30 @@ SHIM
   chmod 0755 "$path_home/dotctl"
 }
 
+tier0_install_just_shim() {
+  local home=${1:?home}
+  local path_home="$home/.local/share/path"
+  local real_just
+
+  real_just="$(command -v just)"
+  mkdir -p "$path_home"
+
+  cat > "$path_home/just" <<SHIM
+#!/usr/bin/env bash
+set -euo pipefail
+: "\${HOME:?HOME is required}"
+
+export HOME="\${TIER0_HOME:-\$HOME}"
+export XDG_CONFIG_HOME="\${XDG_CONFIG_HOME:-\$HOME/.config}"
+export XDG_DATA_HOME="\${XDG_DATA_HOME:-\$HOME/.local/share}"
+export XDG_STATE_HOME="\${XDG_STATE_HOME:-\$HOME/.local/state}"
+export XDG_CACHE_HOME="\${XDG_CACHE_HOME:-\$HOME/.cache}"
+
+exec "$real_just" "\$@"
+SHIM
+  chmod 0755 "$path_home/just"
+}
+
 tier0_init_git_fixture() {
   local home=${1:?home}
 
@@ -302,11 +326,16 @@ tier0_prepare_home() {
   if [[ "$mode" == unit ]]; then
     tier0_install_yadm_shim "$home"
     tier0_install_dotctl_shim "$home"
+    tier0_install_just_shim "$home"
   fi
 
   export TIER0_HOME="$home"
+  export TIER0_XDG_CONFIG_HOME="$home/.config"
+  export TIER0_XDG_DATA_HOME="$home/.local/share"
+  export TIER0_XDG_STATE_HOME="$home/.local/state"
+  export TIER0_XDG_CACHE_HOME="$home/.cache"
   export TIER0_REPO_ROOT="$repo"
-  export TIER0_SYSTEM_PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}"
+  export TIER0_SYSTEM_PATH="$home/.local/share/path:$home/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
   export TIER0_HOST_CLASS="${TIER0_HOST_CLASS:-$(tier0_detect_host_class)}"
 }
 
@@ -317,14 +346,20 @@ tier0_cleanup_home() {
 }
 
 tier0_clean_env() {
+  local home="$TIER0_HOME"
+
   env -i \
-    HOME="$TIER0_HOME" \
+    HOME="$home" \
     USER="${USER:-tier0}" \
     LOGNAME="${LOGNAME:-${USER:-tier0}}" \
     PATH="$TIER0_SYSTEM_PATH" \
     SHELL="${1:-/bin/bash}" \
     HOST_CLASS="$TIER0_HOST_CLASS" \
     DRY_RUN=1 \
+    XDG_CONFIG_HOME="$TIER0_XDG_CONFIG_HOME" \
+    XDG_DATA_HOME="$TIER0_XDG_DATA_HOME" \
+    XDG_STATE_HOME="$TIER0_XDG_STATE_HOME" \
+    XDG_CACHE_HOME="$TIER0_XDG_CACHE_HOME" \
     TERM="${TERM:-xterm-256color}"
 }
 
@@ -336,6 +371,10 @@ tier0_in_home() {
     export PATH="$TIER0_SYSTEM_PATH"
     export HOST_CLASS="$TIER0_HOST_CLASS"
     export DRY_RUN=1
+    export XDG_CONFIG_HOME="$TIER0_XDG_CONFIG_HOME"
+    export XDG_DATA_HOME="$TIER0_XDG_DATA_HOME"
+    export XDG_STATE_HOME="$TIER0_XDG_STATE_HOME"
+    export XDG_CACHE_HOME="$TIER0_XDG_CACHE_HOME"
     # shellcheck source=/dev/null
     . "$HOME/.config/shell/load-env.sh"
     cd "$HOME"

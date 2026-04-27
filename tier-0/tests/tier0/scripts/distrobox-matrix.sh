@@ -35,6 +35,29 @@ done
 
 summary=()
 
+stage_fixture_root() {
+  local distro=${1:?distro}
+  local stage_root
+
+  stage_root="$(mktemp -d "/tmp/tier0-stage-${distro}.XXXXXX")"
+  tar -C "$repo_root" -cf - . | tar -C "$stage_root" -xf -
+
+  for rel in \
+    .config/shell \
+    .config/dotctl \
+    .config/yadm \
+    .config/dotfiles-audit \
+    Justfile
+  do
+    if [[ -e "/home/x404/$rel" || -L "/home/x404/$rel" ]]; then
+      mkdir -p "$stage_root/$(dirname -- "$rel")"
+      cp -a -- "/home/x404/$rel" "$stage_root/$rel"
+    fi
+  done
+
+  printf '%s\n' "$stage_root"
+}
+
 for item in "${containers[@]}"; do
   name=${item%%:*}
   host_class=${item#*:}
@@ -44,19 +67,22 @@ for item in "${containers[@]}"; do
   distro_summary="$report_dir/tier0-matrix-$distro.json"
   container_repo="/tmp/tier0-src-$distro"
   container_report_dir="/tmp/tier0-results-$distro"
+  host_stage=""
   status=0
   run_cmd="$(printf 'cd %q && TIER0_MODE=unit TIER0_HOST_CLASS=%q TIER0_DISTRO=%q TIER0_REPORT_DIR=%q bash ./tier-0/tests/tier0/run.sh --all --repo %q' \
     "$container_repo" "$host_class" "$distro" "$container_report_dir" "$container_repo")"
 
   printf '==> %s [%s]\n' "$name" "$host_class"
   mkdir -p "$report_dir"
+  host_stage="$(stage_fixture_root "$distro")"
 
-  if tar -C "$repo_root" -cf - . \
+  if tar -C "$host_stage" -cf - . \
     | distrobox enter "$name" -- bash --noprofile --norc -lc "repo_stage=$(printf '%q' "$container_repo"); report_stage=$(printf '%q' "$container_report_dir"); rm -rf \"\$repo_stage\" \"\$report_stage\"; mkdir -p \"\$repo_stage\" \"\$report_stage\"; tar -xf - -C \"\$repo_stage\"; $run_cmd"; then
     status=0
   else
     status=$?
   fi
+  rm -rf -- "$host_stage"
 
   if distrobox enter "$name" -- bash --noprofile --norc -lc "cat $(printf '%q' "$container_report_dir/tier0-robustness-$distro.log")" >"$log" 2>/dev/null; then
     :
