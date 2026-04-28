@@ -1,0 +1,217 @@
+name: Tier-0 robustness
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".config/**"
+      - ".local/share/testspec/tier-0/**"
+      - "tier-0/**"
+      - "Justfile"
+      - ".github/workflows/tier0-robustness.yml"
+  pull_request:
+    paths:
+      - ".config/**"
+      - ".local/share/testspec/tier-0/**"
+      - "tier-0/**"
+      - "Justfile"
+      - ".github/workflows/tier0-robustness.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier0-robustness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tier0-matrix:
+    name: Tier-0 Debian/Arch matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    env:
+      DOTFILES_HOME: ${{ github.workspace }}/.dotfiles
+      DOTCTL_TIER0_REPO_ROOT: ${{ github.workspace }}
+      XDG_STATE_HOME: ${{ github.workspace }}/.state
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      XDG_DATA_HOME: ${{ github.workspace }}/.local/share
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.dotfiles/.config
+      XDG_BIN_HOME: ${{ github.workspace }}/.local/bin
+      TOOL_PATH_HOME: ${{ github.workspace }}/.local/bin
+      TIER0_REPORT_DIR: ${{ github.workspace }}/.tier0-results
+      TIER0_STRICT: "true"
+      TIER0_CI: "true"
+      DBX_CONTAINER_MANAGER: docker
+
+    steps:
+      - name: Checkout testspec repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout dotfiles repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ vars.TIER0_DOTFILES_REPO || 'fatb4f/_404' }}
+          ref: ${{ vars.TIER0_DOTFILES_REF || 'main' }}
+          path: .dotfiles
+          fetch-depth: 0
+
+      - name: Prepare workspace paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p \
+            "$XDG_STATE_HOME" \
+            "$XDG_CACHE_HOME" \
+            "$XDG_DATA_HOME" \
+            "$XDG_CONFIG_HOME" \
+            "$XDG_BIN_HOME" \
+            "$TIER0_REPORT_DIR"
+
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$DOTFILES_HOME"
+
+          echo "$XDG_BIN_HOME" >> "$GITHUB_PATH"
+
+      - name: Locate Tier-0 harness
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -d "$GITHUB_WORKSPACE/tier-0/tests/tier0" ]; then
+            echo "TIER0_ROOT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          else
+            echo "Tier-0 harness not found" >&2
+            find "$GITHUB_WORKSPACE" -maxdepth 5 -type d -path '*/tests/tier0' -print >&2 || true
+            exit 66
+          fi
+
+      - name: Project dotctl into fixture PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$XDG_BIN_HOME"
+
+          if [ -x "$DOTFILES_HOME/.config/dotctl/dotctl" ]; then
+            ln -sf "$DOTFILES_HOME/.config/dotctl/dotctl" "$XDG_BIN_HOME/dotctl"
+          elif [ -x "$DOTFILES_HOME/.config/dotctl/bin/dotctl" ]; then
+            ln -sf "$DOTFILES_HOME/.config/dotctl/bin/dotctl" "$XDG_BIN_HOME/dotctl"
+          elif [ -x "$DOTFILES_HOME/.config/dotctl/src/dotctl" ]; then
+            ln -sf "$DOTFILES_HOME/.config/dotctl/src/dotctl" "$XDG_BIN_HOME/dotctl"
+          else
+            echo "No generated dotctl found; operator command must be projected before CI." >&2
+            find "$DOTFILES_HOME/.config/dotctl" -maxdepth 3 -type f -perm -111 -print 2>/dev/null || true
+            exit 67
+          fi
+
+          command -v dotctl
+          dotctl --help || true
+
+      - name: Install host CI tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bash \
+            ca-certificates \
+            curl \
+            docker.io \
+            distrobox \
+            git \
+            jq \
+            python3 \
+            tar \
+            zstd
+
+          docker version
+
+      - name: Create matrix containers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker pull debian:trixie
+          docker pull archlinux:latest
+
+          docker rm -f tier0-debian tier0-arch >/dev/null 2>&1 || true
+
+          docker run -d --name tier0-debian debian:trixie sleep infinity
+          docker run -d --name tier0-arch archlinux:latest sleep infinity
+
+      - name: Install container substrate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker exec -u root tier0-debian bash -lc '
+            set -euo pipefail
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              bash \
+              ca-certificates \
+              curl \
+              git \
+              jq \
+              python3 \
+              tar \
+              zsh
+          '
+
+          docker exec -u root tier0-arch bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed \
+              bash \
+              ca-certificates \
+              curl \
+              git \
+              jq \
+              python \
+              tar \
+              zsh
+          '
+
+      - name: Run Tier-0 via dotctl operator
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export HOME="$GITHUB_WORKSPACE"
+          export PATH="$XDG_BIN_HOME:/usr/local/bin:/usr/bin:/bin"
+
+          dotctl doctor test-tier0 --backend matrix --json | tee "$TIER0_REPORT_DIR/dotctl-tier0-result.json"
+
+      - name: Verify persisted matrix verdicts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f "$TIER0_REPORT_DIR/tier0-matrix-summary.json"
+          jq . "$TIER0_REPORT_DIR/tier0-matrix-summary.json"
+
+          jq -e '
+            .ok == true
+            and (
+              [
+                .. | objects
+                | select(has("schema_ok") and has("success_ok"))
+                | select(.schema_ok == true and .success_ok == true)
+              ] | length >= 2
+            )
+          ' "$TIER0_REPORT_DIR/tier0-matrix-summary.json" >/dev/null
+
+      - name: Upload Tier-0 reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier0-results-${{ github.run_id }}
+          path: |
+            .tier0-results/**
+            .state/dotctl/tier0/robustness/**
+          if-no-files-found: warn
