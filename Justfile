@@ -4,10 +4,10 @@ default:
     just --list
 
 test-tier0-matrix:
-    bash ./tier-0/tests/tier0/scripts/distrobox-matrix.sh
+    dotctl doctor test-tier0 --backend matrix
 
 test-tier0:
-    bash ./tier-0/tests/tier0/run.sh --all
+    dotctl doctor test-tier0 --backend headless
 
 test-tier0-kitty-loader-transition:
     bash ./tier-0/tests/tier0/scripts/kitty-run-shell.sh
