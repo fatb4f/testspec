@@ -86,28 +86,6 @@ jobs:
             exit 66
           fi
 
-      - name: Project dotctl into fixture PATH
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$XDG_BIN_HOME"
-
-          if [ -x "$DOTFILES_HOME/.config/dotctl/dotctl" ]; then
-            ln -sf "$DOTFILES_HOME/.config/dotctl/dotctl" "$XDG_BIN_HOME/dotctl"
-          elif [ -x "$DOTFILES_HOME/.config/dotctl/bin/dotctl" ]; then
-            ln -sf "$DOTFILES_HOME/.config/dotctl/bin/dotctl" "$XDG_BIN_HOME/dotctl"
-          elif [ -x "$DOTFILES_HOME/.config/dotctl/src/dotctl" ]; then
-            ln -sf "$DOTFILES_HOME/.config/dotctl/src/dotctl" "$XDG_BIN_HOME/dotctl"
-          else
-            echo "No generated dotctl found; operator command must be projected before CI." >&2
-            find "$DOTFILES_HOME/.config/dotctl" -maxdepth 3 -type f -perm -111 -print 2>/dev/null || true
-            exit 67
-          fi
-
-          command -v dotctl
-          dotctl --help || true
-
       - name: Install host CI tools
         shell: bash
         run: |
@@ -137,6 +115,28 @@ jobs:
 
           cd "$DOTFILES_HOME/.config/dotctl"
           bashly generate --source src/bashly.yml
+
+      - name: Project dotctl into fixture PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$XDG_BIN_HOME"
+
+          if [ -x "$DOTFILES_HOME/.config/dotctl/dotctl" ]; then
+            ln -sf "$DOTFILES_HOME/.config/dotctl/dotctl" "$XDG_BIN_HOME/dotctl"
+          elif [ -x "$DOTFILES_HOME/.config/dotctl/bin/dotctl" ]; then
+            ln -sf "$DOTFILES_HOME/.config/dotctl/bin/dotctl" "$XDG_BIN_HOME/dotctl"
+          elif [ -x "$DOTFILES_HOME/.config/dotctl/src/dotctl" ]; then
+            ln -sf "$DOTFILES_HOME/.config/dotctl/src/dotctl" "$XDG_BIN_HOME/dotctl"
+          else
+            echo "No generated dotctl found; operator command must be projected before CI." >&2
+            find "$DOTFILES_HOME/.config/dotctl" -maxdepth 3 -type f -perm -111 -print 2>/dev/null || true
+            exit 67
+          fi
+
+          command -v dotctl
+          dotctl --help || true
 
       - name: Create matrix containers
         shell: bash
