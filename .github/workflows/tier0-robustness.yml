@@ -5,15 +5,11 @@ on:
   push:
     branches: [main]
     paths:
-      - ".config/**"
-      - ".local/share/testspec/tier-0/**"
       - "tier-0/**"
       - "Justfile"
       - ".github/workflows/tier0-robustness.yml"
   pull_request:
     paths:
-      - ".config/**"
-      - ".local/share/testspec/tier-0/**"
       - "tier-0/**"
       - "Justfile"
       - ".github/workflows/tier0-robustness.yml"
@@ -47,12 +43,12 @@ jobs:
 
     steps:
       - name: Checkout testspec repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Checkout dotfiles repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: ${{ vars.TIER0_DOTFILES_REPO || 'fatb4f/_404' }}
           ref: ${{ vars.TIER0_DOTFILES_REF || 'main' }}
