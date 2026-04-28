@@ -122,11 +122,21 @@ jobs:
             distrobox \
             git \
             jq \
+            ruby-full \
             python3 \
             tar \
             zstd
 
+          gem install bashly -N
           docker version
+
+      - name: Generate dotctl
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$DOTFILES_HOME/.config/dotctl"
+          bashly generate --source src/bashly.yml
 
       - name: Create matrix containers
         shell: bash
