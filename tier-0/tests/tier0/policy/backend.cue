@@ -13,18 +13,27 @@ package tier0
   status_path: string
   done_path: string
   started_path: string
+  stdout_path?: string
+  stderr_path?: string
   visible: bool
   done: bool
   valid: bool
   exit?: int & >=0 & <=255
   classification: "ok" |
     "command_failed" |
+    "missing_tool" |
+    "missing_dependency" |
+    "policy_reject" |
     "timeout" |
     "missing_status" |
     "invalid_status" |
     "child_launch_failed" |
+    "transport_failed" |
     "terminal_substrate_unavailable"
+  failed_check?: string
   reason?: string
+  stdout_excerpt?: string
+  stderr_excerpt?: string
 }
 
 #GenericBackend: {

@@ -21,10 +21,13 @@ tier0_backend_report_json() {
   local child_visible="${TIER0_KITTY_CHILD_VISIBLE:-false}"
   local child_done="${TIER0_KITTY_CHILD_DONE:-false}"
   local child_valid="${TIER0_KITTY_CHILD_VALID:-false}"
+  local child_failed_check="${TIER0_KITTY_CHILD_FAILED_CHECK:-}"
   local child_status_path="${TIER0_KITTY_CHILD_STATUS_PATH:-}"
   local child_done_path="${TIER0_KITTY_CHILD_DONE_PATH:-}"
   local child_started_path="${TIER0_KITTY_CHILD_STARTED_PATH:-}"
   local child_status_dir="${TIER0_KITTY_CHILD_STATUS_DIR:-}"
+  local child_stderr_excerpt="${TIER0_KITTY_CHILD_STDERR_EXCERPT:-}"
+  local child_stdout_excerpt="${TIER0_KITTY_CHILD_STDOUT_EXCERPT:-}"
   local required=false
 
   backend="$(tier0_backend_name)"
@@ -79,10 +82,13 @@ tier0_backend_report_json() {
     --argjson child_visible "${child_visible:-false}" \
     --argjson child_done "${child_done:-false}" \
     --argjson child_valid "${child_valid:-false}" \
+    --arg child_failed_check "$child_failed_check" \
     --arg child_status_path "$child_status_path" \
     --arg child_done_path "$child_done_path" \
     --arg child_started_path "$child_started_path" \
     --arg child_status_dir "$child_status_dir" \
+    --arg child_stderr_excerpt "$child_stderr_excerpt" \
+    --arg child_stdout_excerpt "$child_stdout_excerpt" \
     '{
       name:$name,
       required:$required,
@@ -110,7 +116,11 @@ tier0_backend_report_json() {
             valid:$child_valid,
             exit:(if $child_classification == "" then null else $child_exit end),
             classification:(if $child_classification == "" then "missing_status" else $child_classification end),
+            failed_check:$child_failed_check,
             reason:$child_reason
+            ,
+            stderr_excerpt:$child_stderr_excerpt,
+            stdout_excerpt:$child_stdout_excerpt
           }
         else
           null

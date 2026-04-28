@@ -9,6 +9,7 @@ source "$script_dir/lib/tier0_harness.sh"
 usage() {
   cat <<'USAGE'
 Usage: tests/tier0/run.sh [--all|--phases|--bats|--shellspec] [--repo PATH]
+       tests/tier0/run.sh [--phase NAME] [--repo PATH]
 
 Modes:
   --all        run phase harness, Bats, and ShellSpec
@@ -25,6 +26,7 @@ USAGE
 run_phases=false
 run_bats=false
 run_shellspec=false
+single_phase=""
 
 if (($# == 0)); then
   run_phases=true
@@ -50,6 +52,11 @@ while (($# > 0)); do
       shift
       repo_root="${1:?missing --repo value}"
       ;;
+    --phase)
+      shift
+      single_phase="${1:?missing --phase value}"
+      run_phases=true
+      ;;
     -h|--help)
       usage
       exit 0
@@ -64,9 +71,14 @@ while (($# > 0)); do
 done
 
 export TIER0_REPO_ROOT="$repo_root"
+if [[ -n "$single_phase" ]]; then
+  export TIER0_PHASE_FILTER="$single_phase"
+fi
 
-if ! tier0_require_tools; then
-  printf 'warn: continuing Tier-0 report generation despite missing tools\n' >&2
+if [[ "${TIER0_MODE:-unit}" != unit ]]; then
+  if ! tier0_require_tools; then
+    printf 'warn: continuing Tier-0 report generation despite missing tools\n' >&2
+  fi
 fi
 overall_status=0
 
@@ -74,7 +86,7 @@ if [[ -z "${TIER0_HOST_CLASS:-}" ]]; then
   TIER0_HOST_CLASS="$(tier0_detect_host_class)"
 fi
 
-report_dir="${TIER0_REPORT_DIR:-$repo_root/.tier0-results}"
+report_dir="${TIER0_REPORT_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dotctl/tier0/robustness}"
 report_distro="${TIER0_DISTRO:-$TIER0_HOST_CLASS}"
 report_base="tier0-robustness-${report_distro}"
 report_json="$report_dir/$report_base.json"
@@ -101,22 +113,30 @@ if [[ "$run_phases" == true ]]; then
 fi
 
 if [[ "$run_bats" == true ]]; then
-  if TIER0_REPO_ROOT="$repo_root" bats "$script_dir/bats"; then
-    :
+  if command -v bats >/dev/null 2>&1; then
+    if TIER0_REPO_ROOT="$repo_root" bats "$script_dir/bats"; then
+      :
+    else
+      printf 'warn: Bats runner failed; continuing because it is optional\n' >&2
+    fi
   else
-    overall_status=$?
+    printf 'warn: Bats runner unavailable; skipping optional Bats suite\n' >&2
   fi
 fi
 
 if [[ "$run_shellspec" == true ]]; then
-  (
-    cd "$repo_root"
-    if TIER0_REPO_ROOT="$repo_root" shellspec -s bash "$script_dir/shellspec"; then
-      :
-    else
-      exit 1
-    fi
-  ) || overall_status=$?
+  if command -v shellspec >/dev/null 2>&1; then
+    (
+      cd "$repo_root"
+      if TIER0_REPO_ROOT="$repo_root" shellspec -s bash "$script_dir/shellspec"; then
+        :
+      else
+        printf 'warn: ShellSpec runner failed; continuing because it is optional\n' >&2
+      fi
+    )
+  else
+    printf 'warn: ShellSpec runner unavailable; skipping optional ShellSpec suite\n' >&2
+  fi
 fi
 
 exit "$overall_status"

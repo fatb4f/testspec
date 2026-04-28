@@ -31,6 +31,7 @@ Allowed operations:
 - observe
 - vet
 - dry-run
+- read-only mutation guard
 - syntax check
 - PATH resolution
 - tool version probes
@@ -79,6 +80,8 @@ Run only one backend:
 
 The runner creates an isolated temporary `$HOME`, copies only the Tier-0/control-plane subset, initializes a local Git fixture, and installs a test-local `dotctl`/`yadm` adapter in `$TOOL_PATH_HOME`. The adapters are unit-test shims for the control-plane libraries, not production replacements.
 
+The report also carries a read-only mutation guard that compares fixture repo state before and after the run. It is evidence of non-mutation, not a write path.
+
 When phases run, the harness also writes matrix artifacts to a predictable report directory. By default that is `./.tier0-results/` from the repo root, with files named like `tier0-robustness-debian-base.json` and `tier0-robustness-debian-base.log`. Override with `TIER0_REPORT_DIR` if needed.
 
 ## Distrobox matrix
@@ -102,6 +105,20 @@ TIER0_DEBIAN_CONTAINER=my-debian TIER0_ARCH_CONTAINER=my-arch ./tests/tier0/scri
 ```
 
 The matrix script does not create containers and does not install packages. It only enters existing distrobox containers and runs the suite.
+
+## Archive build
+
+Build a portable harness archive:
+
+```sh
+bash ./tier-0/scripts/build-archive.sh ./dist
+```
+
+Smoke-test an extracted archive:
+
+```sh
+bash ./tier-0/scripts/smoke-archive.sh ./dist/tier0-robustness-tests.tar.gz
+```
 
 ## Required tools inside each test container
 

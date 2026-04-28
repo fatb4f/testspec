@@ -36,8 +36,13 @@
   "mutability": {
     "live_repo": "read-only",
     "fixture_home": "temporary-writable",
+    "mutation_guard": "recorded",
     "package_installation": false,
     "service_mutation": false,
     "git_push_pull_commit": false
+  },
+  "archive": {
+    "portable": true,
+    "hardcoded_home_paths": false
   }
 }

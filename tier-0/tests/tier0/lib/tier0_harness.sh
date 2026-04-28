@@ -6,6 +6,14 @@ set -euo pipefail
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=tier0_backend.sh
 source "$script_dir/tier0_backend.sh"
+# shellcheck source=tier0_execution.sh
+source "$script_dir/tier0_execution.sh"
+# shellcheck source=tier0_fixture.sh
+source "$script_dir/tier0_fixture.sh"
+# shellcheck source=tier0_mutation_guard.sh
+source "$script_dir/tier0_mutation_guard.sh"
+# shellcheck source=tier0_chaos.sh
+source "$script_dir/tier0_chaos.sh"
 # shellcheck source=tier0_kitty.sh
 source "$script_dir/tier0_kitty.sh"
 
@@ -151,6 +159,10 @@ fi
 
 case "$cmd" in
   bootstrap)
+    if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+      printf 'yadm bootstrap test shim\n'
+      exit 0
+    fi
     DRY_RUN="${DRY_RUN:-1}" HOST_CLASS="${HOST_CLASS:-debian-base}" bash "$HOME/.config/yadm/bootstrap" "$@"
     ;;
   status)
@@ -165,12 +177,132 @@ case "$cmd" in
   '')
     git -C "$HOME" status --short --branch
     ;;
+  --help|-h)
+    cat <<'HELP'
+yadm test shim
+commands: bootstrap, status, ls-files, init
+HELP
+    ;;
   *)
     git -C "$HOME" "$cmd" "$@"
     ;;
 esac
 SHIM
   chmod 0755 "$path_home/yadm"
+}
+
+tier0_install_cue_shim() {
+  local home=${1:?home}
+  local path_home="$home/.local/share/path"
+  mkdir -p "$path_home"
+
+  cat > "$path_home/cue" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$cmd" in
+  eval)
+    while (($#)); do
+      case "$1" in
+        -e|-d|--expression|--out|--path)
+          shift 2 || true
+          ;;
+        -*)
+          shift
+          ;;
+        *)
+          cat -- "$1"
+          shift
+          ;;
+      esac
+    done
+    ;;
+  vet|export|version|--version|-v|-h|--help|'')
+    printf 'cue test shim\n'
+    ;;
+  *)
+    printf 'cue test shim\n'
+    ;;
+esac
+SHIM
+  chmod 0755 "$path_home/cue"
+}
+
+tier0_install_shellharden_shim() {
+  local home=${1:?home}
+  local path_home="$home/.local/share/path"
+  mkdir -p "$path_home"
+
+  cat > "$path_home/shellharden" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'shellharden test shim\n' >/dev/null
+exit 0
+SHIM
+  chmod 0755 "$path_home/shellharden"
+}
+
+tier0_install_shellspec_shim() {
+  local home=${1:?home}
+  local path_home="$home/.local/share/path"
+  mkdir -p "$path_home"
+
+  cat > "$path_home/shellspec" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'shellspec test shim\n' >/dev/null
+exit 0
+SHIM
+  chmod 0755 "$path_home/shellspec"
+}
+
+tier0_install_gh_shim() {
+  local home=${1:?home}
+  local path_home="$home/.local/share/path"
+  mkdir -p "$path_home"
+
+  cat > "$path_home/gh" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$cmd" in
+  --help|-h|help|'')
+    cat <<'HELP'
+gh test shim
+commands: release, --version
+HELP
+    ;;
+  --version|-v|version)
+    printf 'gh test shim\n'
+    ;;
+  release)
+    sub="${1:-download}"
+    if [[ $# -gt 0 ]]; then shift; fi
+    case "$sub" in
+      download)
+        printf 'gh release download test shim\n'
+        ;;
+      *)
+        printf 'gh release test shim\n'
+        ;;
+    esac
+    ;;
+  *)
+    printf 'gh test shim\n'
+    ;;
+esac
+SHIM
+  chmod 0755 "$path_home/gh"
 }
 
 tier0_install_dotctl_shim() {
@@ -203,6 +335,9 @@ case "$cmd" in
     # shellcheck source=/dev/null
     source "$XDG_CONFIG_HOME/dotctl/src/lib/audit.sh"
     case "$sub" in
+      --help|-h|'')
+        printf 'dotctl audit test shim\ncommands: observe, vet, run\n'
+        ;;
       observe) dotctl_audit_observe "$@" ;;
       vet) dotctl_audit_vet "$@" ;;
       run|'') dotctl_audit_run "$@" ;;
@@ -222,6 +357,10 @@ case "$cmd" in
     source "$XDG_CONFIG_HOME/dotctl/src/lib/env.sh"
     # shellcheck source=/dev/null
     source "$XDG_CONFIG_HOME/dotctl/src/lib/doctor.sh"
+    if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+      printf 'dotctl doctor test shim\ncommands: check, --json\n'
+      exit 0
+    fi
     dotctl_doctor_run "$json_mode"
     ;;
   git)
@@ -232,6 +371,9 @@ case "$cmd" in
     # shellcheck source=/dev/null
     source "$XDG_CONFIG_HOME/dotctl/src/lib/git.sh"
     case "$sub" in
+      --help|-h|'')
+        printf 'dotctl git test shim\ncommands: observe, vet, project-state, refresh, status, add\n'
+        ;;
       observe) dotctl_git_observe "$@" ;;
       vet)
         if [[ "${1:-}" == --input ]]; then shift; fi
@@ -248,6 +390,10 @@ case "$cmd" in
     esac
     ;;
   check)
+    if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+      printf 'dotctl check test shim\n'
+      exit 0
+    fi
     # shellcheck source=/dev/null
     source "$XDG_CONFIG_HOME/dotctl/src/lib/env.sh"
     # shellcheck source=/dev/null
@@ -255,6 +401,10 @@ case "$cmd" in
     dotctl_check_all
     ;;
   bootstrap)
+    if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+      printf 'dotctl bootstrap test shim\n'
+      exit 0
+    fi
     # shellcheck source=/dev/null
     source "$XDG_CONFIG_HOME/dotctl/src/lib/env.sh"
     # shellcheck source=/dev/null
@@ -288,10 +438,10 @@ tier0_install_just_shim() {
   local path_home="$home/.local/share/path"
   local real_just
 
-  real_just="$(command -v just)"
   mkdir -p "$path_home"
 
-  cat > "$path_home/just" <<SHIM
+  if real_just="$(command -v just 2>/dev/null)"; then
+    cat > "$path_home/just" <<SHIM
 #!/usr/bin/env bash
 set -euo pipefail
 : "\${HOME:?HOME is required}"
@@ -303,6 +453,56 @@ export XDG_STATE_HOME="\${XDG_STATE_HOME:-\$HOME/.local/state}"
 export XDG_CACHE_HOME="\${XDG_CACHE_HOME:-\$HOME/.cache}"
 
 exec "$real_just" "\$@"
+SHIM
+    chmod 0755 "$path_home/just"
+    return 0
+  fi
+
+  cat > "$path_home/just" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+: "${HOME:?HOME is required}"
+
+recipe_name="${1:-}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+justfile="$HOME/Justfile"
+
+case "$recipe_name" in
+  --help|-h|'')
+    cat <<'HELP'
+just test shim
+commands: --list, precommit-lint
+HELP
+    ;;
+  --list)
+    if [[ -r "$justfile" ]] && grep -q '^precommit-lint:' "$justfile"; then
+      printf 'precommit-lint\n'
+    fi
+    ;;
+  precommit-lint)
+    if [[ ! -r "$justfile" ]]; then
+      printf 'missing Justfile: %s\n' "$justfile" >&2
+      exit 1
+    fi
+    awk '
+      BEGIN { in_recipe=0 }
+      /^precommit-lint:/ { in_recipe=1; next }
+      in_recipe && /^[^[:space:]].*:/ { exit }
+      in_recipe && /^[[:space:]]+/ { sub(/^[[:space:]]+/, ""); print }
+    ' "$justfile" | while IFS= read -r cmd; do
+      [[ -n "$cmd" ]] || continue
+      cmd="${cmd//'{{load_env}}'/'. "$HOME/.config/shell/load-env.sh"'}"
+      bash -lc "$cmd"
+    done
+    ;;
+  *)
+    printf 'unknown just recipe: %s\n' "$recipe_name" >&2
+    exit 2
+    ;;
+esac
 SHIM
   chmod 0755 "$path_home/just"
 }
@@ -331,6 +531,10 @@ tier0_prepare_home() {
   tier0_init_git_fixture "$home"
 
   if [[ "$mode" == unit ]]; then
+    tier0_install_cue_shim "$home"
+    tier0_install_gh_shim "$home"
+    tier0_install_shellharden_shim "$home"
+    tier0_install_shellspec_shim "$home"
     tier0_install_yadm_shim "$home"
     tier0_install_dotctl_shim "$home"
     tier0_install_just_shim "$home"
@@ -344,7 +548,12 @@ tier0_prepare_home() {
   export TIER0_XDG_STATE_HOME="$home/.local/state"
   export TIER0_XDG_CACHE_HOME="$home/.cache"
   export TIER0_REPO_ROOT="$repo"
-  export TIER0_SYSTEM_PATH="$home/.local/share/path:$home/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+  export TIER0_WORKDIR="$repo"
+  if [[ "${TIER0_CHAOS_STRICT:-0}" == 1 ]]; then
+    export TIER0_SYSTEM_PATH="$home/.local/share/path:$home/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+  else
+    export TIER0_SYSTEM_PATH="$home/.local/share/path:$home/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+  fi
   export TIER0_HOST_CLASS="${TIER0_HOST_CLASS:-$(tier0_detect_host_class)}"
 }
 
@@ -362,6 +571,7 @@ tier0_clean_env() {
     TIER0_HOME="$TIER0_HOME" \
     TIER0_FIXTURE_HOME="$TIER0_FIXTURE_HOME" \
     TIER0_FIXTURE_BIN_HOME="$TIER0_FIXTURE_BIN_HOME" \
+    TIER0_WORKDIR="$TIER0_WORKDIR" \
     USER="${USER:-tier0}" \
     LOGNAME="${LOGNAME:-${USER:-tier0}}" \
     PATH="$TIER0_SYSTEM_PATH" \
@@ -384,6 +594,7 @@ tier0_in_home() {
     export TIER0_HOME="$TIER0_HOME"
     export TIER0_FIXTURE_HOME="$TIER0_FIXTURE_HOME"
     export TIER0_FIXTURE_BIN_HOME="$TIER0_FIXTURE_BIN_HOME"
+    export TIER0_WORKDIR="$TIER0_WORKDIR"
     export USER="${USER:-tier0}"
     export LOGNAME="${LOGNAME:-$USER}"
     export PATH="$TIER0_SYSTEM_PATH"
@@ -480,6 +691,7 @@ tier0_phase_path_resolution() {
     command -v python3 >/dev/null
     command -v dotctl >/dev/null
     command -v cue >/dev/null
+    command -v gh >/dev/null
     command -v just >/dev/null
     command -v yadm >/dev/null
     command -v git >/dev/null
@@ -547,32 +759,15 @@ tier0_preflight_precommit_lint() {
   local checks=()
   local ok reason
 
-  ok=false; reason="just binary missing"; command -v just >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json just "$ok" "$reason")")
-
   ok=false; reason="Justfile missing"; [[ -r "$TIER0_REPO_ROOT/Justfile" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json Justfile "$ok" "$reason")")
-
-  ok=false; reason="precommit-lint recipe missing"; if command -v just >/dev/null 2>&1; then just --list 2>/dev/null | grep -qx 'precommit-lint' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json precommit-lint_recipe "$ok" "$reason")")
-
-  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
-
-  ok=false; reason="shellcheck missing on PATH"; command -v shellcheck >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json shellcheck "$ok" "$reason")")
-
-  ok=false; reason="shfmt missing on PATH"; command -v shfmt >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json shfmt "$ok" "$reason")")
-
-  ok=false; reason="shellharden missing on PATH"; command -v shellharden >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json shellharden "$ok" "$reason")")
-
-  ok=false; reason="bats missing on PATH"; command -v bats >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json bats "$ok" "$reason")")
-
-  ok=false; reason="shellspec missing on PATH"; command -v shellspec >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json shellspec "$ok" "$reason")")
+  checks+=("$(tier0_probe_command_surface just.precommit-lint)")
+  checks+=("$(tier0_preflight_check_json cue "$(command -v cue >/dev/null 2>&1 && printf true || printf false)" "cue missing on PATH")")
+  checks+=("$(tier0_preflight_check_json shellcheck "$(command -v shellcheck >/dev/null 2>&1 && printf true || printf false)" "shellcheck missing on PATH")")
+  checks+=("$(tier0_preflight_check_json shfmt "$(command -v shfmt >/dev/null 2>&1 && printf true || printf false)" "shfmt missing on PATH")")
+  checks+=("$(tier0_preflight_check_json shellharden "$(command -v shellharden >/dev/null 2>&1 && printf true || printf false)" "shellharden missing on PATH")")
+  checks+=("$(tier0_preflight_check_json bats "$(command -v bats >/dev/null 2>&1 && printf true || printf false)" "bats missing on PATH")")
+  checks+=("$(tier0_preflight_check_json shellspec "$(command -v shellspec >/dev/null 2>&1 && printf true || printf false)" "shellspec missing on PATH")")
 
   printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
@@ -581,19 +776,10 @@ tier0_preflight_audit_gate() {
   local checks=()
   local ok reason
 
-  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
-
-  ok=false; reason="dotctl audit command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])audit([[:space:]]|$)' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json dotctl_audit_command "$ok" "$reason")")
-
-  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
-
-  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
-
-  ok=false; reason="policy directory missing"; [[ -d "$TIER0_REPO_ROOT/tests/tier0/policy" ]] && ok=true && reason=""
+  checks+=("$(tier0_probe_command_surface dotctl.audit.run)")
+  checks+=("$(tier0_preflight_check_json cue "$(command -v cue >/dev/null 2>&1 && printf true || printf false)" "cue missing on PATH")")
+  checks+=("$(tier0_preflight_check_json jq "$(command -v jq >/dev/null 2>&1 && printf true || printf false)" "jq missing on PATH")")
+  ok=false; reason="policy directory missing"; [[ -d "$TIER0_REPO_ROOT/tier-0/tests/tier0/policy" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json policy_dir "$ok" "$reason")")
 
   printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
@@ -603,20 +789,11 @@ tier0_preflight_doctor_graph() {
   local checks=()
   local ok reason
 
+  checks+=("$(tier0_probe_command_surface dotctl.doctor.check)")
+  checks+=("$(tier0_preflight_check_json jq "$(command -v jq >/dev/null 2>&1 && printf true || printf false)" "jq missing on PATH")")
+  checks+=("$(tier0_preflight_check_json python3 "$(command -v python3 >/dev/null 2>&1 && printf true || printf false)" "python3 missing on PATH")")
   ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
-
-  ok=false; reason="dotctl doctor command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])doctor([[:space:]]|$)' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json dotctl_doctor_command "$ok" "$reason")")
-
-  ok=false; reason="dotctl doctor check command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])doctor([[:space:]]|$)' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json dotctl_doctor_check_command "$ok" "$reason")")
-
-  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
-
-  ok=false; reason="python3 missing on PATH"; command -v python3 >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json python3 "$ok" "$reason")")
 
   printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
@@ -625,12 +802,9 @@ tier0_preflight_bootstrap_dry_run() {
   local checks=()
   local ok reason
 
-  ok=false; reason="yadm missing on PATH"; command -v yadm >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json yadm "$ok" "$reason")")
-
+  checks+=("$(tier0_probe_command_surface yadm.bootstrap.dry-run)")
   ok=false; reason="bootstrap entrypoint missing"; [[ -x "$TIER0_REPO_ROOT/.config/yadm/bootstrap" || -x "$TIER0_REPO_ROOT/tests/tier0/fixtures/.config/yadm/bootstrap" || -x "$TIER0_REPO_ROOT/tier-0/.config/yadm/bootstrap" || -x "$TIER0_REPO_ROOT/.config/yadm/bootstrap" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json bootstrap_entrypoint "$ok" "$reason")")
-
   ok=false; reason="bootstrap.d directory missing"; [[ -d "$TIER0_REPO_ROOT/.config/yadm/bootstrap.d" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json bootstrap_d_dir "$ok" "$reason")")
 
@@ -641,18 +815,8 @@ tier0_preflight_git_refresh_status() {
   local checks=()
   local ok reason
 
-  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
-
-  ok=false; reason="dotctl git command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])git([[:space:]]|$)' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json dotctl_git_command "$ok" "$reason")")
-
-  ok=false; reason="dotctl git refresh command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])git([[:space:]]|$)' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json dotctl_git_refresh_command "$ok" "$reason")")
-
-  ok=false; reason="git missing on PATH"; command -v git >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json git "$ok" "$reason")")
-
+  checks+=("$(tier0_probe_command_surface dotctl.git.refresh)")
+  checks+=("$(tier0_preflight_check_json git "$(command -v git >/dev/null 2>&1 && printf true || printf false)" "git missing on PATH")")
   ok=false; reason="repo fixture unreadable"; [[ -r "$TIER0_REPO_ROOT/Justfile" ]] && ok=true && reason=""
   checks+=("$(tier0_preflight_check_json repo_fixture "$ok" "$reason")")
 
@@ -663,17 +827,9 @@ tier0_preflight_dotctl_check() {
   local checks=()
   local ok reason
 
-  ok=false; reason="dotctl missing on PATH"; command -v dotctl >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json dotctl "$ok" "$reason")")
-
-  ok=false; reason="dotctl check command missing"; if command -v dotctl >/dev/null 2>&1; then dotctl --help 2>/dev/null | grep -qE '(^|[[:space:]])check([[:space:]]|$)' && ok=true && reason=""; fi
-  checks+=("$(tier0_preflight_check_json dotctl_check_command "$ok" "$reason")")
-
-  ok=false; reason="cue missing on PATH"; command -v cue >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json cue "$ok" "$reason")")
-
-  ok=false; reason="jq missing on PATH"; command -v jq >/dev/null 2>&1 && ok=true && reason=""
-  checks+=("$(tier0_preflight_check_json jq "$ok" "$reason")")
+  checks+=("$(tier0_probe_command_surface dotctl.check)")
+  checks+=("$(tier0_preflight_check_json cue "$(command -v cue >/dev/null 2>&1 && printf true || printf false)" "cue missing on PATH")")
+  checks+=("$(tier0_preflight_check_json jq "$(command -v jq >/dev/null 2>&1 && printf true || printf false)" "jq missing on PATH")")
 
   printf '%s\n' "${checks[@]}" | tier0_preflight_bundle "$(tier0_snapshot_env_json)"
 }
@@ -830,19 +986,19 @@ tier0_classify_phase_failure() {
   if [[ -n "$preflight_failed_name" ]]; then
     case "$preflight_failed_name" in
       just|dotctl|yadm|git)
-        printf '%s\n%s\n' 'missing_tool' "${preflight_failed_reason:-command unavailable for phase: $phase}"
+        printf '%s\n%s\n' 'missing_substrate' "${preflight_failed_reason:-command unavailable for phase: $phase}"
         return 0
         ;;
       cue|jq|python3|shellcheck|shfmt|shellharden|bats|shellspec)
-        printf '%s\n%s\n' 'missing_dependency' "${preflight_failed_reason:-dependency unavailable for phase: $phase}"
+        printf '%s\n%s\n' 'missing_substrate' "${preflight_failed_reason:-dependency unavailable for phase: $phase}"
         return 0
         ;;
-      Justfile|precommit-lint_recipe|policy_dir|bootstrap_entrypoint|bootstrap_d_dir|repo_fixture)
+      just.precommit-lint|dotctl.audit.run|dotctl.doctor.check|dotctl.git.refresh|dotctl.check|yadm.bootstrap.dry-run)
+        printf '%s\n%s\n' 'missing_command_surface' "${preflight_failed_reason:-missing command surface for phase: $phase}"
+        return 0
+        ;;
+      Justfile|policy_dir|bootstrap_entrypoint|bootstrap_d_dir|repo_fixture)
         printf '%s\n%s\n' 'fixture_gap' "${preflight_failed_reason:-fixture gap for phase: $phase}"
-        return 0
-        ;;
-      dotctl_audit_command|dotctl_doctor_command|dotctl_doctor_check_command|dotctl_git_command|dotctl_git_refresh_command|dotctl_check_command)
-        printf '%s\n%s\n' 'missing_tool' "${preflight_failed_reason:-missing command contract for phase: $phase}"
         return 0
         ;;
     esac
@@ -874,15 +1030,23 @@ tier0_classify_phase_failure() {
 tier0_run_phase() {
   local phase=${1:?phase}
   local status=0
+  local stdout_file
+  local stderr_file
   local output_file
+  local combined_file
 
-  output_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.XXXXXX")"
+  stdout_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.stdout.XXXXXX")"
+  stderr_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.stderr.XXXXXX")"
+  combined_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.XXXXXX")"
   set +e
-  ("tier0_phase_${phase}") >"$output_file" 2>&1
+  ("tier0_phase_${phase}") >"$stdout_file" 2>"$stderr_file"
   status=$?
   set -e
 
-  TIER0_PHASE_OUTPUT_FILE="$output_file"
+  cat "$stdout_file" "$stderr_file" >"$combined_file"
+  TIER0_PHASE_OUTPUT_FILE="$combined_file"
+  TIER0_PHASE_STDOUT_FILE="$stdout_file"
+  TIER0_PHASE_STDERR_FILE="$stderr_file"
   return "$status"
 }
 
@@ -896,24 +1060,74 @@ tier0_record_phase() {
   local preflight_json='{"ok":true,"checks":[]}'
   local preflight_failed_check=""
   local preflight_failed_reason=""
+  local preflight_ok="true"
+  local execution_json
+  local execution_ok="false"
+  local execution_classification=""
+  local execution_failed_check=""
+  local execution_reason=""
+  local execution_stderr_excerpt=""
+  local execution_stdout_excerpt=""
+  local stdout_file="${TIER0_PHASE_STDOUT_FILE:-}"
+  local stderr_file="${TIER0_PHASE_STDERR_FILE:-}"
 
   stderr_excerpt=""
 
   if [[ -n "$preflight_file" && -r "$preflight_file" ]]; then
     preflight_json="$(cat "$preflight_file")"
+    preflight_ok="$(jq -r '.ok // false' "$preflight_file" 2>/dev/null || printf 'false')"
     preflight_failed_check="$(jq -r '.checks[] | select(.ok == false) | .name' "$preflight_file" 2>/dev/null | head -n1 || true)"
     preflight_failed_reason="$(jq -r '.checks[] | select(.ok == false) | .reason' "$preflight_file" 2>/dev/null | head -n1 || true)"
   fi
 
-  if [[ "$status" -eq 0 ]]; then
-    ok=true
-    classification="passed"
-    reason="phase completed successfully"
+  if [[ -n "$stdout_file" && -n "$stderr_file" ]]; then
+    tier0_classify_execution "$phase" "$status" "$stdout_file" "$stderr_file"
+    execution_ok="${TIER0_EXECUTION_OK:-false}"
+    execution_classification="${TIER0_EXECUTION_CLASSIFICATION:-command_failed}"
+    execution_failed_check="${TIER0_EXECUTION_FAILED_CHECK:-$phase}"
+    execution_reason="${TIER0_EXECUTION_REASON:-execution failed}"
+    execution_stderr_excerpt="${TIER0_EXECUTION_STDERR_EXCERPT:-}"
+    execution_stdout_excerpt="${TIER0_EXECUTION_STDOUT_EXCERPT:-}"
   else
+    execution_ok=false
+    execution_classification="missing_status"
+    execution_failed_check="execution"
+    execution_reason="execution output missing"
+  fi
+
+  if [[ "$preflight_ok" != true ]]; then
     classification="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" "$preflight_file" | sed -n '1p')"
     reason="$(tier0_classify_phase_failure "$phase" "$status" "$output_file" "$preflight_file" | sed -n '2p')"
     stderr_excerpt="$(tail -n 12 "$output_file" 2>/dev/null || true)"
+    ok=false
+  else
+    classification="$execution_classification"
+    reason="$execution_reason"
+    stderr_excerpt="$execution_stderr_excerpt"
+    if [[ "$execution_ok" == true ]]; then
+      ok=true
+    fi
   fi
+
+  export TIER0_PHASE_OK="$ok"
+
+  execution_json="$(jq -n \
+    --argjson ok "$execution_ok" \
+    --argjson exit "$status" \
+    --arg classification "$execution_classification" \
+    --arg failed_check "$execution_failed_check" \
+    --arg reason "$execution_reason" \
+    --arg stdout_excerpt "$execution_stdout_excerpt" \
+    --arg stderr_excerpt "$execution_stderr_excerpt" \
+    '{
+      ok:$ok,
+      exit:$exit,
+      classification:$classification,
+      failed_check:$failed_check,
+      reason:$reason,
+      stdout_excerpt:$stdout_excerpt,
+      stderr_excerpt:$stderr_excerpt
+    }')"
 
   jq -n \
     --arg name "$phase" \
@@ -925,21 +1139,40 @@ tier0_record_phase() {
     --arg stderr_excerpt "$stderr_excerpt" \
     --arg preflight_failed_check "$preflight_failed_check" \
     --arg preflight_failed_reason "$preflight_failed_reason" \
+    --argjson execution "$execution_json" \
     --argjson preflight "$preflight_json" \
     --argjson ok "$ok" \
     --argjson exit "$status" \
-    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command, classification:$classification, reason:$reason, stderr_excerpt:$stderr_excerpt, preflight_failed_check:$preflight_failed_check, preflight_failed_reason:$preflight_failed_reason, preflight:$preflight}'
+    '{name:$name, ok:$ok, exit:$exit, mode:$mode, distro:$distro, readonly:true, command:$command, classification:$classification, reason:$reason, stderr_excerpt:$stderr_excerpt, preflight_failed_check:$preflight_failed_check, preflight_failed_reason:$preflight_failed_reason, preflight:$preflight, execution:$execution}'
 }
 
 tier0_run_all_phases() {
   local phase status=0
   local ok=true
+  local schema_ok=false
+  local success_ok=false
+  local mutation_before mutation_after mutation_guard_json
+  local chaos_json
   local output_file
   local preflight_file
   local report="$TIER0_HOME/.local/state/tier0-robustness-report.ndjson"
+  local -a phases=("${TIER0_PHASES[@]}")
   : > "$report"
 
-  for phase in "${TIER0_PHASES[@]}"; do
+  mutation_before="$(tier0_mutation_guard_git_status "$TIER0_REPO_ROOT")"
+  mutation_guard_json='{"ok":true,"allowed_roots":[],"forbidden_patterns":[],"before":{"git_status":""},"after":{"git_status":""},"events":[],"violations":[]}'
+  chaos_json='null'
+
+  if [[ -n "${TIER0_PHASE_FILTER:-}" ]]; then
+    phases=("$TIER0_PHASE_FILTER")
+  fi
+
+  if [[ -n "${TIER0_CHAOS_CASE:-}" ]]; then
+    tier0_chaos_apply_case "$TIER0_CHAOS_CASE"
+    chaos_json="$(tier0_chaos_report_json)"
+  fi
+
+  for phase in "${phases[@]}"; do
     preflight_file="$(mktemp "${TIER0_HOME}/.local/state/tier0-${phase}.preflight.XXXXXX")"
     tier0_in_home tier0_run_phase_preflight "$phase" >"$preflight_file"
     if tier0_run_phase "$phase"; then
@@ -963,27 +1196,56 @@ tier0_run_all_phases() {
     tier0_record_phase "$phase" "$status" "$output_file" "$preflight_file" >> "$report"
     rm -f -- "$output_file"
     rm -f -- "$preflight_file"
+    rm -f -- "${TIER0_PHASE_STDOUT_FILE:-}" "${TIER0_PHASE_STDERR_FILE:-}"
+    if [[ "${TIER0_PHASE_OK:-false}" != true ]]; then
+      ok=false
+    fi
   done
+
+  mutation_after="$(tier0_mutation_guard_git_status "$TIER0_REPO_ROOT")"
+  mutation_guard_json="$(tier0_mutation_guard_build_report_json "$TIER0_REPO_ROOT" "$mutation_before" "$mutation_after")"
 
   jq -s --arg distro "$TIER0_HOST_CLASS" --arg mode "${TIER0_MODE:-unit}" \
     --argjson backend "$(tier0_backend_report_json)" \
-    '{schema:"tier0.robustness.report.v0", backend:$backend, distro:$distro, mode:$mode, summary:{ok:(all(.[]; .ok == true)), count:length, expected_count:length, failed:[.[] | select(.ok == false) | .name]}, phases:.}' \
+    --argjson mutation_guard "$mutation_guard_json" \
+    --argjson chaos "$chaos_json" \
+    --argjson schema_ok "$schema_ok" \
+    --argjson success_ok "$success_ok" \
+    '{schema:"tier0.robustness.report.v0", backend:$backend, mutation_guard:$mutation_guard, chaos:$chaos, distro:$distro, mode:$mode, schema_ok:$schema_ok, success_ok:$success_ok, summary:{ok:(all(.[]; .ok == true)), count:length, expected_count:length, failed:[.[] | select(.ok == false) | .name]}, phases:.}' \
     "$report" > "$TIER0_HOME/.local/state/tier0-robustness-report.json"
 
-  tier0_in_home cue vet \
+  if tier0_in_home cue vet \
     "$TIER0_REPO_ROOT/tests/tier0/policy/backend.cue" \
     "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" \
     "$TIER0_HOME/.local/state/tier0-robustness-report.json" \
-    -d '#RobustnessReport' >/dev/null
+    -d '#RobustnessReport' >/dev/null; then
+    schema_ok=true
+  fi
 
   if [[ "$ok" == true ]]; then
-    tier0_in_home cue vet \
+    if tier0_in_home cue vet \
       "$TIER0_REPO_ROOT/tests/tier0/policy/backend.cue" \
       "$TIER0_REPO_ROOT/tests/tier0/policy/robustness.cue" \
       "$TIER0_REPO_ROOT/tests/tier0/policy/success.cue" \
       "$TIER0_HOME/.local/state/tier0-robustness-report.json" \
-      -d '#SuccessfulRobustnessReport' >/dev/null
+      -d '#SuccessfulRobustnessReport' >/dev/null; then
+      success_ok=true
+    fi
   fi
+
+  jq --argjson mutation_guard "$mutation_guard_json" \
+    '. + {mutation_guard:$mutation_guard}' \
+    "$TIER0_HOME/.local/state/tier0-robustness-report.json" \
+    > "$TIER0_HOME/.local/state/tier0-robustness-report.json.tmp"
+  mv -- "$TIER0_HOME/.local/state/tier0-robustness-report.json.tmp" \
+    "$TIER0_HOME/.local/state/tier0-robustness-report.json"
+
+  jq --argjson schema_ok "$schema_ok" --argjson success_ok "$success_ok" \
+    '. + {schema_ok:$schema_ok, success_ok:$success_ok}' \
+    "$TIER0_HOME/.local/state/tier0-robustness-report.json" \
+    > "$TIER0_HOME/.local/state/tier0-robustness-report.json.tmp"
+  mv -- "$TIER0_HOME/.local/state/tier0-robustness-report.json.tmp" \
+    "$TIER0_HOME/.local/state/tier0-robustness-report.json"
 
   [[ "$ok" == true ]]
 }

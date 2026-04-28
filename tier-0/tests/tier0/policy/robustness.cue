@@ -16,6 +16,15 @@ package tier0
   stderr_excerpt: string
   preflight_failed_check: string
   preflight_failed_reason: string
+  execution?: {
+    ok: bool
+    exit: int & >=0
+    classification: string
+    failed_check?: string
+    reason: string
+    stdout_excerpt?: string
+    stderr_excerpt: string
+  }
   preflight: {
     ok: bool
     env?: {
@@ -36,6 +45,9 @@ package tier0
       name: string
       ok: bool
       reason: string
+      command?: string
+      resolved?: string
+      source?: string
     }]
   }
 }
@@ -43,6 +55,19 @@ package tier0
 #RobustnessReport: {
   schema: "tier0.robustness.report.v0"
   backend?: #BackendReport
+  mutation_guard?: #MutationGuard
+  chaos?: {
+    enabled: bool
+    ok: bool
+    case?: string
+    mutation?: string
+    target?: string
+    expected?: {
+      phase: string
+      classification: string
+      failed_check?: string
+    }
+  }
   distro: #Distro
   mode: #Mode
   summary: {
